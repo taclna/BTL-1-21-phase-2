@@ -712,7 +712,7 @@ Một feature chỉ được coi là hoàn thành khi có đủ phần phù hợ
 | Gọi đồng bộ liên module | Dễ hiểu/debug; chỉ dùng async khi Pha 2 có bằng chứng |
 | Không cache ở Pha 1 | Có baseline trung thực, tránh tối ưu trước khi đo |
 
-Tài liệu này là nguồn yêu cầu chính của codebase. Thay đổi phạm vi, business rule, module boundary hoặc chiến lược nhất quán dữ liệu phải cập nhật spec và ghi ADR ngắn trong `docs/adr/`.
+Tài liệu này là nguồn yêu cầu chính của codebase. Thay đổi phạm vi, business rule, module boundary hoặc chiến lược nhất quán dữ liệu phải cập nhật spec và ghi ADR ngắn trong thư mục `adr/` của pha tương ứng (`docs/phase-1/adr/`, `docs/phase-2/adr/`).
 
 ## 22. Quy tắc code
 

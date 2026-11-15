@@ -203,11 +203,11 @@ Một số nội dung trong tài liệu đặc tả/yêu cầu là định hư�
 
 ## 8. Nguồn đối chiếu
 
-- [README dự án](../README.md), [đặc tả hệ thống](SPEC.md) và [yêu cầu Booking](booking_requirements.md).
-- [Xác thực và phân quyền](../src/main/java/com/example/cinema/config/SecurityConfig.java).
-- [Nghiệp vụ tài khoản](../src/main/java/com/example/cinema/modules/identity/business/IdentityService.java).
-- [API booking](../src/main/java/com/example/cinema/modules/booking/api/BookingController.java) và [nghiệp vụ booking](../src/main/java/com/example/cinema/modules/booking/business/BookingService.java).
-- [Lưu và xóa booking, kiểm tra booking khi hủy suất](../src/main/java/com/example/cinema/modules/booking/data/BookingRepositoryAdapter.java).
-- [Nghiệp vụ suất chiếu](../src/main/java/com/example/cinema/modules/theater/business/ShowtimeService.java) và [nghiệp vụ phòng chiếu](../src/main/java/com/example/cinema/modules/theater/business/AuditoriumService.java).
+- [README dự án](../../README.md), [đặc tả hệ thống](SPEC.md) và [yêu cầu Booking](booking_requirements.md).
+- [Xác thực và phân quyền](../../src/main/java/com/example/cinema/config/SecurityConfig.java).
+- [Nghiệp vụ tài khoản](../../src/main/java/com/example/cinema/modules/identity/business/IdentityService.java).
+- [API booking](../../src/main/java/com/example/cinema/modules/booking/api/BookingController.java) và [nghiệp vụ booking](../../src/main/java/com/example/cinema/modules/booking/business/BookingService.java).
+- [Lưu và xóa booking, kiểm tra booking khi hủy suất](../../src/main/java/com/example/cinema/modules/booking/data/BookingRepositoryAdapter.java).
+- [Nghiệp vụ suất chiếu](../../src/main/java/com/example/cinema/modules/theater/business/ShowtimeService.java) và [nghiệp vụ phòng chiếu](../../src/main/java/com/example/cinema/modules/theater/business/AuditoriumService.java).
 
 Khi tài liệu cũ và mã nguồn khác nhau, tài liệu này ưu tiên hành vi trong mã nguồn để mô tả luồng hiện tại.

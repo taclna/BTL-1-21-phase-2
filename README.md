@@ -122,14 +122,14 @@ Authorization: Bearer <access-token>
 
 ## 5. Đặc tả API
 
-- Có bản đặc tả api [OpenAPI 3.1 dạng JSON](docs/openapi.json)
+- Có bản đặc tả api [OpenAPI 3.1 dạng JSON](docs/phase-1/openapi.json)
 - Swagger UI và `/v3/api-docs` là tài liệu sinh trực tiếp từ phiên bản ứng dụng đang chạy.
 - Swagger/OpenAPI chỉ được truy cập công khai ở profile `local` và `test`.
 
 Khi contract API thay đổi, chạy ứng dụng rồi cập nhật bản tĩnh:
 
 ```powershell
-Invoke-WebRequest http://localhost:8080/v3/api-docs -OutFile docs/openapi.json
+Invoke-WebRequest http://localhost:8080/v3/api-docs -OutFile docs/phase-1/openapi.json
 ```
 
 ### Danh sách API
@@ -193,9 +193,10 @@ Bảng dưới là **median của ba lượt**; độ trễ tính bằng mili gi
 
 Kết quả áp dụng cho điều kiện tải đã đo; chưa xác định tải bão hòa. Kịch bản tranh ghế (contention) chưa được chạy.
 
-[CSV 18 lượt](docs/performance/kaggle-cpu-2026-10-29-summary.csv) · [Môi trường và ngưỡng từng lượt](docs/performance/kaggle-cpu-2026-10-29-evidence.json) · [Notebook](load-test/cinema-kaggle-cpu.ipynb) · [Hướng dẫn chạy k6](load-test/README.md)
+[CSV 18 lượt](docs/phase-1/performance/kaggle-cpu-2026-10-29-summary.csv) · [Môi trường và ngưỡng từng lượt](docs/phase-1/performance/kaggle-cpu-2026-10-29-evidence.json) · [Notebook](load-test/cinema-kaggle-cpu.ipynb) · [Hướng dẫn chạy k6](load-test/README.md)
 
 ## 9. Tài liệu liên quan
 
-- [Đặc tả hệ thống](docs/SPEC.md)
-- [Quyết định kiến trúc modular monolith](docs/adr/001-modular-monolith-3-tier.md)
+- [Đặc tả hệ thống](docs/phase-1/SPEC.md)
+- [Quyết định kiến trúc modular monolith](docs/phase-1/adr/001-modular-monolith-3-tier.md)
+- Pha 2: [kế hoạch](docs/phase-2/ke-hoach.md) · [phân công 5 tuần](docs/phase-2/work_plan.md) · [E1 tranh ghế](docs/phase-2/e1-tranh-ghe.md) · ADR [002](docs/phase-2/adr/002-kiem-soat-tranh-ghe.md), [003](docs/phase-2/adr/003-cache-doc.md), [004](docs/phase-2/adr/004-rate-limiting.md), [005](docs/phase-2/adr/005-mo-rong-ngang.md)

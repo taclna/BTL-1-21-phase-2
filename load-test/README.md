@@ -1,6 +1,6 @@
 # Chạy k6 cho Cinema API
 
-Các kịch bản gọi API đang chạy; chúng không tự khởi động ứng dụng hay PostgreSQL. Theo `docs/SPEC.md` mục 16, workload hỗn hợp và tranh ghế cần Booking API đã tích hợp theo contract. Script không giả lập thành công khi server chưa có các route đó.
+Các kịch bản gọi API đang chạy; chúng không tự khởi động ứng dụng hay PostgreSQL. Theo `docs/phase-1/SPEC.md` mục 16, workload hỗn hợp và tranh ghế cần Booking API đã tích hợp theo contract. Script không giả lập thành công khi server chưa có các route đó.
 
 ## Chuẩn bị
 
@@ -70,4 +70,4 @@ Ghi cùng commit, dataset, CPU/vCPU/quota, RAM, Java, PostgreSQL, k6, JVM flags,
 
 Trên Windows, dùng `run-baseline.ps1` với PID tiến trình Java. Nếu PostgreSQL chạy trong Docker, thêm `-DockerContainerNames btl-ktpm-db-1` để ghi `docker stats` theo giây vào CSV riêng. Khi chạy k6 thủ công, thêm `--include-system-env-vars` để script nhận fixture, URL và mức VU từ shell.
 
-Điền [mẫu báo cáo](../docs/bao-cao-hieu-nang-mau.md) sau ba lượt mỗi mức. Báo p50/p95/p99, throughput, lỗi kỹ thuật, lỗi nghiệp vụ và tài nguyên; với contention ghi số winner, conflict đúng mã và xác nhận DB không có ghế bị giữ trùng. Chưa chạy thì để là chưa đo.
+Điền [mẫu báo cáo](../docs/phase-1/bao-cao-hieu-nang-mau.md) sau ba lượt mỗi mức. Báo p50/p95/p99, throughput, lỗi kỹ thuật, lỗi nghiệp vụ và tài nguyên; với contention ghi số winner, conflict đúng mã và xác nhận DB không có ghế bị giữ trùng. Chưa chạy thì để là chưa đo.

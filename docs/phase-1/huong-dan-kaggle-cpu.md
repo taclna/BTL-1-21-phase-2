@@ -9,7 +9,7 @@
 | Một nghiệp vụ backend | Đạt | Rạp phim: Identity, Movie, Theater, Booking |
 | REST, JSON | Có REST và JSON cho kết quả thành công; cần chuẩn hóa lỗi Booking | `BookingController`, `BookingExceptionHandler` |
 | POST, GET, DELETE | Đạt về triển khai | POST/GET `/api/v1/bookings`, DELETE `/api/v1/bookings/{bookingId}` |
-| OpenAPI/Swagger | Đạt về cấu hình và tài liệu | `OpenApiConfig`, springdoc trong `pom.xml`, `docs/openapi.json` |
+| OpenAPI/Swagger | Đạt về cấu hình và tài liệu | `OpenApiConfig`, springdoc trong `pom.xml`, `docs/phase-1/openapi.json` |
 | API → nghiệp vụ → dữ liệu | Đạt về cấu trúc | Các package `api`, `business`, `data`; có `ArchitectureTest` |
 | Business không import web/DB | Chưa thấy import web/JPA/JDBC/Spring Data trong business | Repository interface ở business, adapter JPA ở data. Spring DI và `@Transactional` vẫn có; đề bài không cấm toàn bộ Spring |
 | Repository/DAL, ORM/data mapper | Đạt về triển khai | Spring Data JPA, entity và repository adapter |

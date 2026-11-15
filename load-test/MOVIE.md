@@ -49,4 +49,4 @@ Ghi CPU/RAM API, PostgreSQL và máy chạy k6 trong cùng khoảng thời gian.
 
 Chọn khoảng đo theo timestamp của metric `measured_requests` trong raw JSON, rồi lọc cùng khoảng đó trong CSV tài nguyên; không lấy mốc mở process cộng warm-up vì seed/setup cũng mất thời gian. Ghi commit, dataset, VU, warm-up, thời lượng, Java/PostgreSQL/k6, JVM flags và giới hạn CPU/RAM.
 
-Điền [mẫu báo cáo Movie](../docs/bao-cao-hieu-nang-mau.md) sau khi chạy đủ lượt. Nếu chưa đo, để trạng thái là chưa đo; không tự điền số giả định.
+Điền [mẫu báo cáo Movie](../docs/phase-1/bao-cao-hieu-nang-mau.md) sau khi chạy đủ lượt. Nếu chưa đo, để trạng thái là chưa đo; không tự điền số giả định.

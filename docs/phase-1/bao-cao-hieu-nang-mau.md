@@ -87,7 +87,7 @@ Workload: 35% Movie list, 25% showtime list, 25% seat availability, 10% POST boo
 1. **Tính đúng đắn dữ liệu (Database Integrity)**:
    - Khi cho nhiều tài khoản người dùng đồng thời tranh chấp đúng 1 ghế duy nhất trong cùng 1 suất chiếu, cơ chế transaction và khóa của tầng Booking đã hoạt động hiệu quả: **Chỉ có đúng 1 request được ghi thành công (Winner)** và cơ sở dữ liệu PostgreSQL chỉ tồn tại duy nhất 1 bản ghi `booking_seats` cho ghế này. Hoàn toàn không xảy ra hiện tượng **double-booking**.
 2. **Lệch hợp đồng (Contract Deviation)**:
-   - Theo đặc tả `docs/SPEC.md` và `docs/booking_requirements.md`, request thất bại khi ghế đã có người đặt phải nhận mã lỗi **HTTP 409 Conflict** với body JSON chứa error code `SEAT_ALREADY_BOOKED`.
+   - Theo đặc tả `docs/phase-1/SPEC.md` và `docs/phase-1/booking_requirements.md`, request thất bại khi ghế đã có người đặt phải nhận mã lỗi **HTTP 409 Conflict** với body JSON chứa error code `SEAT_ALREADY_BOOKED`.
    - Tuy nhiên, triển khai hiện tại của `BookingService.java` (thuộc phạm vi Người 4) đang ném `IllegalArgumentException("Seat has already been booked")`, dẫn đến ExceptionHandler trả về **HTTP 400 Bad Request**.
    - Theo quy tắc phân chia quyền hạn của Người 2 (không can thiệp sửa đổi mã nguồn nghiệp vụ của module Booking), Người 2 không sửa code này mà ghi nhận chính xác lỗi contract tại đây để Người 4 hoàn thiện.
 
