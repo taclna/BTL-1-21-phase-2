@@ -20,10 +20,10 @@ Nguyên tắc giữ theo [SPEC mục 17](../phase-1/SPEC.md): mỗi lần chỉ 
 | # | Thí nghiệm | Thuộc tính chất lượng | Phương án so sánh | ADR | Ưu tiên |
 |---|---|---|---|---|---|
 | E1 | [Tranh ghế](e1-tranh-ghe.md) | Consistency, performance | A khóa cả suất / B khóa chia sẻ / C khóa từng ghế | [002](adr/002-kiem-soat-tranh-ghe.md) | Bắt buộc |
-| E2 | Cache đọc | Performance, scalability | Không cache / Caffeine | [003](adr/003-cache-doc.md) | Bắt buộc |
+| E4 | Tối ưu query / index | Performance | Hiện tại / đã tối ưu, trên dataset lớn | — | Bắt buộc |
 | E5 | Observability | Observability | Tắt / bật metrics Prometheus | — | Bắt buộc |
+| E2 | Cache đọc | Performance, scalability | Không cache / Caffeine | [003](adr/003-cache-doc.md) | Nên có |
 | E3 | Rate limiting / backpressure | Availability | Không giới hạn / giới hạn số request đồng thời | [004](adr/004-rate-limiting.md) | Nên có |
-| E4 | Tối ưu query / index | Performance | Hiện tại / đã tối ưu, trên dataset lớn | — | Nên có |
 | E6 | Nhiều replica | Scalability, availability | 1 / 2 instance qua nginx; cache Caffeine riêng / Redis chung | [005](adr/005-mo-rong-ngang.md) | Có thể bỏ |
 
 Cột "Ưu tiên" là thứ tự cắt khi bị trễ, xem [work_plan.md mục 5](work_plan.md#5-ưu-tiên-và-điểm-cắt).
@@ -38,6 +38,7 @@ Trước mọi phép đo phải làm xong hai nhóm việc, chi tiết ở [E1 m
    - Chỉ cho hủy trước giờ chiếu ít nhất 30 phút.
    - Mã booking khó đoán.
    - Admin xem mọi booking: `GET /api/v1/admin/bookings`, xem chi tiết và hủy mọi booking.
+   - `GET /api/v1/bookings` có `page`/`pageSize` và response phân trang đúng SPEC 7.5.
 
 Sau đó gắn tag **`phase-1-baseline`**, chậm nhất thứ Ba 24/11. Đây là phương án A, và mọi thí nghiệm so với tag này. Số liệu 28/10 đo trước khi đổi schema nên chỉ dùng tham khảo, không so trực tiếp.
 
@@ -69,6 +70,8 @@ Các phần việc ở bước 0 đều phải có test và mô tả OpenAPI nh�
 Chi tiết ở [e1-tranh-ghe.md](e1-tranh-ghe.md) và [ADR-002](adr/002-kiem-soat-tranh-ghe.md).
 
 ## 6. E2: cache đọc
+
+E2 chỉ được đo sau khi đã có baseline và kết quả E4. Query phải được sửa và hiểu rõ trước khi thêm cache, tránh dùng cache để che N+1 hoặc execution plan kém hiệu quả. Tag E2 vẫn tách riêng từ `phase-1-baseline` để nguyên tắc mỗi thí nghiệm chỉ thay một nhóm yếu tố không bị phá vỡ.
 
 **Vấn đề cần đo trước:** điểm bão hòa của tải đọc với phương án A (S5, tuần 2). Nếu nút thắt nằm ở CPU của DB hoặc ở số connection pool, cache có cơ sở. Nếu nút thắt là CPU của API khi serialize JSON, cache sẽ giúp ít hơn, và ghi đúng như vậy.
 
@@ -105,9 +108,11 @@ Chi tiết ở [e1-tranh-ghe.md](e1-tranh-ghe.md) và [ADR-002](adr/002-kiem-soa
 
 ## 8. E4: tối ưu query / index
 
+E4 được ưu tiên trước E2. Mục tiêu là tạo một đường truy cập database hiệu quả và đo được trên dataset lớn trước khi cache làm giảm số lần query.
+
 **Ứng viên đã thấy trong code:**
 
-- `GET /api/v1/bookings` bị N+1: [BookingRepositoryAdapter.toBooking](../../src/main/java/com/example/cinema/modules/booking/data/BookingRepositoryAdapter.java) chạy một query lấy ghế cho mỗi booking. Endpoint này cũng chưa phân trang (SPEC 7.5 yêu cầu `page`/`pageSize`).
+- `GET /api/v1/bookings` bị N+1: [BookingRepositoryAdapter.toBooking](../../src/main/java/com/example/cinema/modules/booking/data/BookingRepositoryAdapter.java) chạy một query lấy ghế cho mỗi booking. Pagination là phần sửa contract bắt buộc ở Bước 0; E4 đo và sửa số query trên từng trang.
 - Endpoint trạng thái ghế: nạp toàn bộ sơ đồ ghế từ Theater rồi nạp danh sách ghế đã đặt. Cần kiểm tra plan khi phòng lớn.
 - Lịch chiếu theo phim và ngày: kiểm tra index `showtimes(movie_id, starts_at)` có được dùng hay không.
 - `GET /api/v1/admin/bookings` (thêm ở bước 0): phân trang trên toàn bộ booking, cần index phù hợp với `ORDER BY created_at DESC` và không được N+1 như `GET /bookings`.
@@ -120,11 +125,11 @@ Chi tiết ở [e1-tranh-ghe.md](e1-tranh-ghe.md) và [ADR-002](adr/002-kiem-soa
 2. Chạy `EXPLAIN (ANALYZE, BUFFERS)` trước và sau khi sửa.
 3. Thêm test đếm số query mỗi request bằng Hibernate statistics, để N+1 không quay lại.
 
-Sửa bằng fetch theo lô (`findAllByBookingIdIn`), phân trang, và index thiếu nếu `EXPLAIN` chỉ ra. Mỗi index mới là một migration Flyway mới.
+Sửa bằng fetch theo lô (`findAllByBookingIdIn`) và index thiếu nếu `EXPLAIN` chỉ ra. Mỗi index mới là một migration Flyway mới.
 
 **Giả thuyết:** p95 của `GET /bookings` hiện tăng tuyến tính theo số booking của user; sau khi sửa gần như không đổi.
 
-**Đánh đổi:** thêm migration và index (ghi chậm hơn một chút); phân trang đổi contract `GET /bookings`.
+**Đánh đổi:** batch fetch làm mapping phức tạp hơn; thêm migration và index làm ghi chậm hơn một chút.
 
 ## 9. E5: observability
 
