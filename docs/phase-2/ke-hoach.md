@@ -185,6 +185,8 @@ Thanh toán thật, giữ ghế tạm và hết hạn, microservices, message br
 
 Hủy mềm, quy tắc 30 phút, mã booking và Admin xem mọi booking **thuộc phạm vi** và làm ở bước 0 (mục 3). Chúng được làm trước khi gắn `phase-1-baseline` để A, B, C cùng chạy trên một schema.
 
+Idempotency cho `POST /api/v1/bookings` được ghi nhận tại [ADR-006](adr/006-idempotency-booking.md) như một đề xuất cải thiện reliability và consistency. Hạng mục này chưa nằm trong E1–E6 và chưa tự động trở thành phần bắt buộc của Pha 2; nhóm chỉ triển khai sau Bước 0 nếu còn nguồn lực, nếu không chuyển sang Pha 3.
+
 ## 14. Ước lượng thời gian chạy trên Kaggle
 
 | Thí nghiệm | Ước lượng mỗi phương án | Số phương án | Tổng |
