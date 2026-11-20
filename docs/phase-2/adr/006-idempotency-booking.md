@@ -1,8 +1,8 @@
 # ADR-006: Idempotency cho thao tác tạo booking
 
-- Trạng thái: Proposed
-- Ngày: 2026-11-16
-- Liên quan: [kế hoạch Pha 2](../ke-hoach.md), [ADR-002](002-kiem-soat-tranh-ghe.md), [E1](../e1-tranh-ghe.md)
+- Trạng thái: Proposed, triển khai trong Pha 2 dưới dạng thí nghiệm E7 (quyết định 20/11/2026)
+- Ngày: 2026-11-16, bổ sung 2026-11-20
+- Liên quan: [kế hoạch Pha 2, mục E7](../ke-hoach.md#11-e7-idempotency-cho-tạo-booking), [ADR-002](002-kiem-soat-tranh-ghe.md), [E1](../e1-tranh-ghe.md)
 
 ## Bối cảnh
 
@@ -56,6 +56,8 @@ Key được scope theo user đã xác thực. Hai user có thể dùng cùng ch
 | Key cũ, payload giống và booking đã được tạo | `200 OK`, trả cùng booking và header `Idempotency-Replayed: true` |
 | Key cũ nhưng payload khác | `409 IDEMPOTENCY_KEY_REUSED` |
 | Nghiệp vụ thất bại và transaction rollback | Không giữ key; client được phép retry cùng key |
+| Key cũ, payload giống, nhưng booking đã bị hủy sau đó | `200 OK`, trả booking ở trạng thái hiện tại (`CANCELLED`) kèm `Idempotency-Replayed: true`; không tạo booking mới. Muốn đặt lại phải dùng key mới vì đó là một ý định mới |
+| Key đã quá `expires_at` (dù bản ghi chưa bị dọn) | Xem như key mới |
 
 Response lỗi dùng error envelope chung và có `requestId`. `Idempotency-Key` không thay thế JWT; user vẫn được xác định từ access token.
 
@@ -81,12 +83,25 @@ foreign key (booking_id) references bookings(id)
 
 Bản ghi được giữ ít nhất 24 giờ, dài hơn cửa sổ retry thông thường của client. Sau thời gian này có thể xóa theo lô; client không được kỳ vọng cùng key còn được replay sau khi hết hạn.
 
+Vì việc dọn theo lô có độ trễ, bản ghi đã hết hạn có thể vẫn còn trong bảng. Bước claim key phải coi bản ghi này là không tồn tại, ví dụ:
+
+```sql
+INSERT INTO booking_idempotency (...) VALUES (...)
+ON CONFLICT (user_id, idempotency_key) DO UPDATE
+   SET request_hash = EXCLUDED.request_hash, booking_id = NULL,
+       created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at
+   WHERE booking_idempotency.expires_at < now()
+RETURNING ...
+```
+
+Có dòng trả về nghĩa là transaction này sở hữu key. Không có dòng nghĩa là key còn hiệu lực, chuyển sang bước đọc và replay.
+
 ### Xử lý đồng thời
 
 Luồng đề xuất trong một transaction:
 
 1. Xác thực key và request, rồi tính `request_hash`.
-2. Chèn quyền sở hữu key bằng `INSERT ... ON CONFLICT DO NOTHING`.
+2. Chèn quyền sở hữu key bằng `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE expires_at < now()` như mục Dữ liệu, để key hết hạn được dùng lại.
 3. Nếu chèn thành công, thực hiện luồng tạo booking của ADR-002 và lưu `booking_id` trước khi commit.
 4. Nếu key đã tồn tại, đọc bản ghi hiện có. PostgreSQL sẽ phối hợp hai transaction tranh cùng unique key.
 5. Nếu hash khác, trả `409 IDEMPOTENCY_KEY_REUSED`; nếu hash giống, trả booking đã tạo trước đó.
@@ -104,6 +119,8 @@ Nếu hai request cùng user, key và payload đến đồng thời, chỉ một
 - Repository idempotency thuộc module `booking`; module khác không truy cập trực tiếp bảng này.
 - Logic claim key phải nằm trong transaction bao quanh toàn bộ thao tác tạo booking.
 - Unique constraint giữ vai trò quyết định dưới concurrency; kiểm tra `exists` ở application không đủ.
+- **Phụ thuộc hủy mềm (Bước 0, dòng 0.7):** FK `booking_id → bookings` chỉ an toàn khi booking không bao giờ bị xóa vật lý. Không triển khai ADR này trên phiên bản còn xóa vật lý booking.
+- Claim key phải diễn ra **trước** khi khóa suất và kiểm tra ghế (ADR-002). Nhờ vậy một retry nhận lại booking cũ thay vì `409 SEAT_ALREADY_BOOKED` do chính request trước giữ ghế.
 
 ## Quan sát và đo lường
 
@@ -127,6 +144,8 @@ Không dùng `userId`, `bookingId` hoặc idempotency key làm metric label vì 
 6. Hai user dùng cùng key: mỗi user vẫn có namespace idempotency riêng.
 7. Key thiếu hoặc sai định dạng: trả `400 INVALID_IDEMPOTENCY_KEY` theo error envelope.
 8. Cùng request nhưng `seatIds` khác thứ tự: được xem là cùng payload sau chuẩn hóa.
+9. Booking đã tạo bằng key rồi bị hủy, retry cùng key: trả booking `CANCELLED`, không tạo booking mới.
+10. Bản ghi key đã quá `expires_at` nhưng chưa bị dọn: request cùng key tạo booking mới bình thường.
 
 ## Hệ quả
 
@@ -146,4 +165,11 @@ Không dùng `userId`, `bookingId` hoặc idempotency key làm metric label vì 
 
 ## Trạng thái triển khai
 
-ADR này mới là đề xuất, chưa được triển khai trong code hiện tại. Chỉ chuyển sang Accepted sau khi Bước 0 hoàn thành, contract được cập nhật, các test chấp nhận pass và nhóm xác nhận đưa idempotency vào phạm vi Pha 2 hoặc Pha 3.
+ADR này mới là đề xuất, chưa được triển khai trong code hiện tại.
+
+Quyết định 20/11/2026: triển khai **trong Pha 2** dưới dạng thí nghiệm E7, không nằm trong Bước 0.
+
+- Từ GĐ1, mọi script k6 gửi `Idempotency-Key` cho mỗi `POST /bookings`. Phiên bản chưa có ADR này bỏ qua header, nên A, B, C của E1 vẫn chạy cùng contract.
+- Code nằm trên tag riêng `phase-2-idempotency`, tách từ `phase-1-baseline`. Người 1 làm, Người 4 review.
+- Đo overhead bằng cách so tag này với `phase-1-baseline` trong cùng phiên Kaggle (xem [kế hoạch mục 11](../ke-hoach.md#11-e7-idempotency-cho-tạo-booking)).
+- Chuyển sang Accepted khi 10 test chấp nhận pass; khi đó ghép vào `phase-2-final`.

@@ -51,6 +51,8 @@ Phải làm xong và merge trước mọi phép đo. Gồm hai nhóm, đã đố
 | 0.9 | Mã booking | Cột `booking_code varchar(20)` unique, khó đoán: sinh bằng `SecureRandom`, 10 ký tự Base32 (khoảng 50 bit), thử lại khi trùng. Trả trong response chi tiết và danh sách |
 | 0.10 | Admin xem mọi booking | `GET /api/v1/admin/bookings?page&pageSize` có phân trang, sắp theo `created_at desc`. Admin xem được chi tiết và hủy được mọi booking qua `GET`/`DELETE /api/v1/bookings/{id}` (SPEC 7.5: Owner/Admin); Customer vẫn chỉ thấy booking của mình |
 
+| 0.11 | Phân trang `GET /api/v1/bookings` | `page`/`pageSize` (mặc định 1/20, tối đa 100), response `{data: [...], meta: {...}}` theo SPEC 7.1 và 7.5, sắp theo `created_at desc`. Cập nhật `booking.js` vì script đọc danh sách này |
+
 Với booking đã tạo trước migration: đặt `status = CONFIRMED` và sinh `booking_code` ngay trong migration. `payment_status` giữ nguyên, không liên quan tới trạng thái giữ ghế.
 
 Sau bước 0, gắn tag **`phase-1-baseline`** (tag này hiện chưa có trong repo). Đây là Pha 1 hoàn chỉnh theo SPEC và là phương án **A**. Số liệu Kaggle 28/10 đo trên commit `36c8922`, trước khi đổi schema, nên chỉ dùng tham khảo. Mọi so sánh của Pha 2 dùng A đo lại trong cùng phiên.
@@ -114,7 +116,7 @@ Xem [work_plan.md](work_plan.md). Tóm tắt phần của E1:
 
 | Người | Việc |
 |---|---|
-| Người 1 | 0.9 mã booking, 0.10 Admin xem mọi booking (Người 4 review); lấy mẫu `pg_stat_activity` và đếm deadlock trong `run-baseline.py`; metrics Hikari; quản lý tag |
+| Người 1 | 0.9 mã booking, 0.10 Admin xem mọi booking, 0.11 phân trang `GET /bookings` (Người 4 review); lấy mẫu `pg_stat_activity` và đếm deadlock trong `run-baseline.py`; metrics Hikari; quản lý tag |
 | Người 2 | Sửa 0.4–0.5; viết `hot-showtime.js`, `SEED_SCOPE=hot`; chạy đo trên Kaggle |
 | Người 3 | Method khóa chia sẻ trong `ShowtimeModuleApi`; `overlap.js`; giữ test hủy suất đồng thời |
 | Người 4 | Sửa 0.1–0.3, 0.6; 0.7 hủy mềm và partial index; 0.8 quy tắc 30 phút; triển khai B (tuần 2) và C (tuần 3); test deadlock với booking nhiều ghế |
