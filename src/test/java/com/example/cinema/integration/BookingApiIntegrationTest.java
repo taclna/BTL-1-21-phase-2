@@ -1,0 +1,273 @@
+package com.example.cinema.integration;
+
+import com.example.cinema.config.JwtTokenService;
+import com.example.cinema.modules.identity.business.AuthenticatedUser;
+import com.example.cinema.modules.identity.business.User;
+import com.example.cinema.modules.theater.business.Auditorium;
+import com.example.cinema.modules.theater.business.AuditoriumService;
+import com.example.cinema.modules.theater.business.CreateAuditoriumCommand;
+import com.example.cinema.modules.theater.business.CreateShowtimeCommand;
+import com.example.cinema.modules.theater.business.SeatType;
+import com.example.cinema.modules.theater.business.Showtime;
+import com.example.cinema.modules.theater.business.ShowtimeService;
+import com.fasterxml.jackson.databind.JsonNode;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@Testcontainers
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("test")
+class BookingApiIntegrationTest {
+
+    @Container
+    @ServiceConnection
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17-alpine");
+
+    @Autowired
+    private TestRestTemplate restTemplate;
+
+    @Autowired
+    private JwtTokenService jwtTokenService;
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private AuditoriumService auditoriumService;
+
+    @Autowired
+    private ShowtimeService showtimeService;
+
+    private UUID firstCustomer;
+    private UUID secondCustomer;
+    private Showtime showtime;
+    private UUID seatId;
+
+    @BeforeEach
+    void seed() {
+        firstCustomer = insertCustomer();
+        secondCustomer = insertCustomer();
+        UUID movieId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO movies (id,title,description,duration_minutes,age_rating,release_date,status,created_at,updated_at)
+                VALUES (?, ?, 'Booking API integration fixture', 120, 'P', CURRENT_DATE, 'NOW_SHOWING', now(), now())
+                """, movieId, "Booking API " + movieId);
+
+        Auditorium auditorium = auditoriumService.create(new CreateAuditoriumCommand(
+                "Booking API " + UUID.randomUUID(),
+                List.of(new CreateAuditoriumCommand.SeatDefinition("A", 1, 2, SeatType.STANDARD))));
+        Instant startsAt = Instant.now().plus(Duration.ofDays(2)).truncatedTo(ChronoUnit.SECONDS);
+        showtime = showtimeService.create(new CreateShowtimeCommand(
+                movieId, auditorium.id(), startsAt, new BigDecimal("90000.00")));
+        seatId = auditoriumService.findSeats(auditorium.id()).getFirst().id();
+    }
+
+    @Test
+    void twoCustomersBookingTheSameSeatReturnOneCreatedAndOneConflict() throws Exception {
+        List<ResponseEntity<JsonNode>> responses = race(
+                () -> createBooking(firstCustomer, seatId),
+                () -> createBooking(secondCustomer, seatId));
+
+        assertThat(responses.stream().map(response -> response.getStatusCode().value()).toList())
+                .containsExactlyInAnyOrder(HttpStatus.CREATED.value(), HttpStatus.CONFLICT.value());
+
+        ResponseEntity<JsonNode> winner = responses.stream()
+                .filter(response -> response.getStatusCode() == HttpStatus.CREATED)
+                .findFirst().orElseThrow();
+        ResponseEntity<JsonNode> loser = responses.stream()
+                .filter(response -> response.getStatusCode() == HttpStatus.CONFLICT)
+                .findFirst().orElseThrow();
+        assertThat(winner.getBody()).isNotNull();
+        assertThat(winner.getBody().path("data").path("bookingId").asText()).isNotBlank();
+        assertThat(loser.getBody()).isNotNull();
+        assertThat(loser.getBody().path("error").path("code").asText())
+                .isEqualTo("SEAT_ALREADY_BOOKED");
+        assertThat(loser.getBody().path("error").path("requestId").asText()).isNotBlank();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM booking_seats
+                WHERE showtime_id = ? AND seat_id = ? AND released_at IS NULL
+                """, Integer.class, showtime.id(), seatId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM bookings
+                WHERE showtime_id = ? AND status = 'CONFIRMED'
+                """, Integer.class, showtime.id())).isEqualTo(1);
+    }
+
+    @Test
+    void bookingEndpointsCoverCreateListDetailSeatsAndCancellation() {
+        ResponseEntity<JsonNode> created = createBooking(firstCustomer, seatId);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody()).isNotNull();
+        UUID bookingId = UUID.fromString(created.getBody().path("data").path("bookingId").asText());
+        assertThat(created.getBody().path("data").path("status").asText()).isEqualTo("CONFIRMED");
+
+        ResponseEntity<JsonNode> list = get("/api/v1/bookings", firstCustomer);
+        assertThat(list.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(list.getBody()).isNotNull();
+        assertThat(list.getBody().path("data").isArray()).isTrue();
+        assertThat(list.getBody().path("data").get(0).path("bookingId").asText())
+                .isEqualTo(bookingId.toString());
+
+        ResponseEntity<JsonNode> detail = get("/api/v1/bookings/" + bookingId, firstCustomer);
+        assertThat(detail.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(detail.getBody()).isNotNull();
+        assertThat(detail.getBody().path("data").path("seats").get(0).path("seatId").asText())
+                .isEqualTo(seatId.toString());
+
+        assertSeatStatus("BOOKED");
+
+        ResponseEntity<Void> cancelled = restTemplate.exchange(
+                "/api/v1/bookings/" + bookingId,
+                HttpMethod.DELETE,
+                new HttpEntity<>(bearerHeaders(firstCustomer)),
+                Void.class);
+        assertThat(cancelled.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+        ResponseEntity<JsonNode> cancelledDetail = get("/api/v1/bookings/" + bookingId, firstCustomer);
+        assertThat(cancelledDetail.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(cancelledDetail.getBody()).isNotNull();
+        assertThat(cancelledDetail.getBody().path("data").path("status").asText()).isEqualTo("CANCELLED");
+        assertThat(cancelledDetail.getBody().path("data").path("cancelledAt").asText()).isNotBlank();
+        assertSeatStatus("AVAILABLE");
+    }
+
+    @Test
+    void bookingEndpointsRequireAuthenticationAndHideOtherCustomersBookings() {
+        ResponseEntity<JsonNode> unauthenticated = restTemplate.getForEntity(
+                "/api/v1/bookings", JsonNode.class);
+        assertThat(unauthenticated.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(unauthenticated.getBody()).isNotNull();
+        assertThat(unauthenticated.getBody().path("error").path("code").asText())
+                .isEqualTo("UNAUTHORIZED");
+
+        ResponseEntity<JsonNode> created = createBooking(firstCustomer, seatId);
+        assertThat(created.getBody()).isNotNull();
+        String bookingId = created.getBody().path("data").path("bookingId").asText();
+
+        ResponseEntity<JsonNode> otherCustomerDetail = get(
+                "/api/v1/bookings/" + bookingId, secondCustomer);
+        assertThat(otherCustomerDetail.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(otherCustomerDetail.getBody()).isNotNull();
+        assertThat(otherCustomerDetail.getBody().path("error").path("code").asText())
+                .isEqualTo("BOOKING_NOT_FOUND");
+
+        ResponseEntity<JsonNode> otherCustomerCancellation = restTemplate.exchange(
+                "/api/v1/bookings/" + bookingId,
+                HttpMethod.DELETE,
+                new HttpEntity<>(bearerHeaders(secondCustomer)),
+                JsonNode.class);
+        assertThat(otherCustomerCancellation.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(otherCustomerCancellation.getBody()).isNotNull();
+        assertThat(otherCustomerCancellation.getBody().path("error").path("code").asText())
+                .isEqualTo("BOOKING_NOT_FOUND");
+
+        ResponseEntity<JsonNode> missingShowtime = restTemplate.getForEntity(
+                "/api/v1/showtimes/" + UUID.randomUUID() + "/seats", JsonNode.class);
+        assertThat(missingShowtime.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(missingShowtime.getBody()).isNotNull();
+        assertThat(missingShowtime.getBody().path("error").path("code").asText())
+                .isEqualTo("SHOWTIME_NOT_FOUND");
+    }
+
+    private UUID insertCustomer() {
+        UUID userId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO users (id,username,password_hash,role,created_at,updated_at)
+                VALUES (?, ?, 'test-hash', 'CUSTOMER', now(), now())
+                """, userId, "booking-api-" + userId);
+        return userId;
+    }
+
+    private ResponseEntity<JsonNode> createBooking(UUID customerId, UUID requestedSeatId) {
+        return restTemplate.postForEntity(
+                "/api/v1/bookings",
+                new HttpEntity<>(Map.of(
+                        "showtimeId", showtime.id(),
+                        "seatIds", List.of(requestedSeatId)), bearerHeaders(customerId)),
+                JsonNode.class);
+    }
+
+    private ResponseEntity<JsonNode> get(String path, UUID customerId) {
+        return restTemplate.exchange(
+                path,
+                HttpMethod.GET,
+                new HttpEntity<>(bearerHeaders(customerId)),
+                JsonNode.class);
+    }
+
+    private void assertSeatStatus(String expectedStatus) {
+        ResponseEntity<JsonNode> seats = restTemplate.getForEntity(
+                "/api/v1/showtimes/" + showtime.id() + "/seats", JsonNode.class);
+        assertThat(seats.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(seats.getBody()).isNotNull();
+        JsonNode requestedSeat = findSeat(seats.getBody(), seatId);
+        assertThat(requestedSeat).isNotNull();
+        assertThat(requestedSeat.path("status").asText()).isEqualTo(expectedStatus);
+    }
+
+    private JsonNode findSeat(JsonNode seats, UUID requestedSeatId) {
+        for (JsonNode seat : seats) {
+            if (requestedSeatId.toString().equals(seat.path("id").asText())) {
+                return seat;
+            }
+        }
+        return null;
+    }
+
+    private HttpHeaders bearerHeaders(UUID customerId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(jwtTokenService.issue(
+                new AuthenticatedUser(customerId, User.Role.CUSTOMER)));
+        return headers;
+    }
+
+    private List<ResponseEntity<JsonNode>> race(
+            Callable<ResponseEntity<JsonNode>> first,
+            Callable<ResponseEntity<JsonNode>> second
+    ) throws Exception {
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch go = new CountDownLatch(1);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var futures = List.of(first, second).stream().map(action -> executor.submit(() -> {
+                ready.countDown();
+                if (!go.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("HTTP race did not start");
+                }
+                return action.call();
+            })).toList();
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            go.countDown();
+            return List.of(
+                    futures.get(0).get(20, TimeUnit.SECONDS),
+                    futures.get(1).get(20, TimeUnit.SECONDS));
+        }
+    }
+}
