@@ -14,6 +14,8 @@ public class Booking {
     private final BigDecimal totalAmount;
     private final Instant createdAt;
     private final PaymentStatus paymentStatus;
+    private final BookingStatus status;
+    private final Instant cancelledAt;
 
     public Booking(
             UUID userId,
@@ -21,7 +23,8 @@ public class Booking {
             List<bookingSeat> seats,
             BigDecimal totalAmount
     ) {
-        this(UUID.randomUUID(), userId, showtimeId, seats, totalAmount, Instant.now(), PaymentStatus.PENDING);
+        this(UUID.randomUUID(), userId, showtimeId, seats, totalAmount, Instant.now(),
+                PaymentStatus.PENDING, BookingStatus.CONFIRMED, null);
     }
 
     public Booking(
@@ -31,7 +34,8 @@ public class Booking {
             List<bookingSeat> seats,
             BigDecimal totalAmount
     ) {
-        this(bookingId, userId, showtimeId, seats, totalAmount, Instant.now(), PaymentStatus.PENDING);
+        this(bookingId, userId, showtimeId, seats, totalAmount, Instant.now(),
+                PaymentStatus.PENDING, BookingStatus.CONFIRMED, null);
     }
 
     public Booking(
@@ -43,6 +47,21 @@ public class Booking {
             Instant createdAt,
             PaymentStatus paymentStatus
     ) {
+        this(bookingId, userId, showtimeId, seats, totalAmount, createdAt,
+                paymentStatus, BookingStatus.CONFIRMED, null);
+    }
+
+    public Booking(
+            UUID bookingId,
+            UUID userId,
+            UUID showtimeId,
+            List<bookingSeat> seats,
+            BigDecimal totalAmount,
+            Instant createdAt,
+            PaymentStatus paymentStatus,
+            BookingStatus status,
+            Instant cancelledAt
+    ) {
         this.bookingId = bookingId;
         this.userId = userId;
         this.showtimeId = showtimeId;
@@ -50,6 +69,8 @@ public class Booking {
         this.totalAmount = totalAmount;
         this.createdAt = createdAt;
         this.paymentStatus = paymentStatus;
+        this.status = status;
+        this.cancelledAt = cancelledAt;
     }
 
     public UUID getBookingId() {
@@ -75,4 +96,8 @@ public class Booking {
     public Instant getCreatedAt() { return createdAt; }
 
     public PaymentStatus getPaymentStatus() { return paymentStatus; }
+
+    public BookingStatus getStatus() { return status; }
+
+    public Instant getCancelledAt() { return cancelledAt; }
 }

@@ -7,12 +7,10 @@ import org.springframework.data.jpa.repository.Query;
 
 interface BookingSeatJpaRepository extends JpaRepository<BookingSeatEntity, UUID> {
 
-    @Query("select s.seatId from BookingSeatEntity s where s.showtimeId = :showtimeId")
+    @Query("select s.seatId from BookingSeatEntity s where s.showtimeId = :showtimeId and s.releasedAt is null")
     List<UUID> findBookedSeatIds(UUID showtimeId);
 
     List<BookingSeatEntity> findAllByBookingId(UUID bookingId);
 
-    boolean existsByShowtimeIdAndSeatId(UUID showtimeId, UUID seatId);
-
-    void deleteAllByBookingId(UUID bookingId);
+    boolean existsByShowtimeIdAndSeatIdAndReleasedAtIsNull(UUID showtimeId, UUID seatId);
 }

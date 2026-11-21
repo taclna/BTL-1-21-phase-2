@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -26,17 +27,33 @@ class BookingSeatEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal price;
 
+    @Column(name = "released_at")
+    private Instant releasedAt;
+
     protected BookingSeatEntity() {
     }
 
-    BookingSeatEntity(UUID id, UUID bookingId, UUID showtimeId, UUID seatId, BigDecimal price) {
+    BookingSeatEntity(
+            UUID id,
+            UUID bookingId,
+            UUID showtimeId,
+            UUID seatId,
+            BigDecimal price,
+            Instant releasedAt
+    ) {
         this.id = id;
         this.bookingId = bookingId;
         this.showtimeId = showtimeId;
         this.seatId = seatId;
         this.price = price;
+        this.releasedAt = releasedAt;
     }
 
     UUID getSeatId() { return seatId; }
     BigDecimal getPrice() { return price; }
+    Instant getReleasedAt() { return releasedAt; }
+
+    void release(Instant releaseTime) {
+        this.releasedAt = releaseTime;
+    }
 }
