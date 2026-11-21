@@ -5,6 +5,7 @@ import com.example.cinema.modules.booking.business.BookingCannotBeCancelledExcep
 import com.example.cinema.modules.booking.business.BookingNotFoundException;
 import com.example.cinema.modules.booking.business.BookingService;
 import com.example.cinema.modules.booking.business.BookingStatus;
+import com.example.cinema.modules.booking.business.SeatAlreadyBookedException;
 import com.example.cinema.modules.theater.business.ShowtimeModuleApi.SeatKind;
 import com.example.cinema.modules.theater.business.ShowtimeModuleApi.SeatSnapshot;
 import com.example.cinema.modules.theater.business.ShowtimeModuleApi.ShowtimeSnapshot;
@@ -159,7 +160,7 @@ class BookingServiceTest {
     void rejectsSeatAlreadyBookedForSameShowtime() {
         bookingService.createBooking(userId, showtimeId, List.of(standardSeatId));
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(SeatAlreadyBookedException.class,
                 () -> bookingService.createBooking(UUID.randomUUID(), showtimeId, List.of(standardSeatId)));
     }
 

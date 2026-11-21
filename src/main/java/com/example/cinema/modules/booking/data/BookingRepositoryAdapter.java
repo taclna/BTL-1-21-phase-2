@@ -3,12 +3,15 @@ package com.example.cinema.modules.booking.data;
 import com.example.cinema.modules.booking.business.Booking;
 import com.example.cinema.modules.booking.business.BookingRepository;
 import com.example.cinema.modules.booking.business.BookingStatus;
+import com.example.cinema.modules.booking.business.SeatAlreadyBookedException;
 import com.example.cinema.modules.booking.business.bookingSeat;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,18 +32,25 @@ class BookingRepositoryAdapter implements BookingRepository {
 
     @Override
     public Booking save(Booking booking) {
-        bookingJpaRepository.save(new BookingEntity(
-                booking.getBookingId(), booking.getUserId(), booking.getShowtimeId(),
-                booking.getTotalAmount(), booking.getCreatedAt(), booking.getPaymentStatus(),
-                booking.getStatus(), booking.getCancelledAt()));
+        try {
+            bookingJpaRepository.save(new BookingEntity(
+                    booking.getBookingId(), booking.getUserId(), booking.getShowtimeId(),
+                    booking.getTotalAmount(), booking.getCreatedAt(), booking.getPaymentStatus(),
+                    booking.getStatus(), booking.getCancelledAt()));
 
-        List<BookingSeatEntity> seatEntities = booking.getSeats().stream()
-                .map(seat -> new BookingSeatEntity(
-                        UUID.randomUUID(), booking.getBookingId(), booking.getShowtimeId(),
-                        seat.getSeatId(), seat.getPrice(), null))
-                .toList();
-        bookingSeatJpaRepository.saveAll(seatEntities);
-        return booking;
+            List<BookingSeatEntity> seatEntities = booking.getSeats().stream()
+                    .map(seat -> new BookingSeatEntity(
+                            UUID.randomUUID(), booking.getBookingId(), booking.getShowtimeId(),
+                            seat.getSeatId(), seat.getPrice(), null))
+                    .toList();
+            bookingSeatJpaRepository.saveAllAndFlush(seatEntities);
+            return booking;
+        } catch (DataIntegrityViolationException exception) {
+            if (isConstraint(exception, "uq_active_showtime_seat")) {
+                throw new SeatAlreadyBookedException();
+            }
+            throw exception;
+        }
     }
 
     @Override
@@ -97,5 +107,15 @@ class BookingRepositoryAdapter implements BookingRepository {
         return new Booking(entity.getId(), entity.getUserId(), entity.getShowtimeId(), seats,
                 entity.getTotalAmount(), entity.getCreatedAt(), entity.getPaymentStatus(),
                 entity.getStatus(), entity.getCancelledAt());
+    }
+
+    private static boolean isConstraint(Throwable failure, String constraintName) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation
+                    && constraintName.equals(violation.getConstraintName())) {
+                return true;
+            }
+        }
+        return false;
     }
 }

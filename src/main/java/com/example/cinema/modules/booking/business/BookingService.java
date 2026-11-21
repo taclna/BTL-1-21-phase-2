@@ -70,7 +70,7 @@ public class BookingService {
     private void validateSeatAvailable(List<UUID> seatIds, UUID showtimeId) {
         for (UUID seatId : seatIds) {
             if (bookingRepository.existsByShowtimeIdAndSeatId(showtimeId, seatId)) {
-                throw new IllegalArgumentException("Seat has already been booked");
+                throw new SeatAlreadyBookedException();
             }
         }
     }

@@ -26,7 +26,8 @@ const server=http.createServer(async(req,res)=>{
         return reply(user?200:401,{data:user?{id:user.userId,role:'CUSTOMER'}:null});
     }
     if(req.method==='GET' && url.pathname==='/api/v1/bookings')
-        return reply(200,[...bookings.values()].filter(value=>value.token===token).map(value=>({bookingId:value.bookingId,createdAt:'2026-10-27T00:00:00Z'})));
+        return reply(200,{data:[...bookings.values()].filter(value=>value.token===token)
+            .map(value=>({bookingId:value.bookingId,status:value.status,createdAt:'2026-10-27T00:00:00Z'}))});
     if(req.method==='GET' && url.pathname==='/api/v1/movies') return reply(200,{data:[...movies.values()],meta:{totalPages:1}});
     if(req.method==='GET' && url.pathname.startsWith('/api/v1/movies/')) {
         const movie=movies.get(url.pathname.split('/').pop());
@@ -64,6 +65,7 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='DELETE' && url.pathname.startsWith('/api/v1/bookings/')) {
         const booking=bookings.get(url.pathname.split('/').pop());
         if(!booking || booking.token!==token) {wrongOwner++;return reply(403,{error:{code:'FORBIDDEN'}});}
+        if(booking.status!=='CONFIRMED') return reply(409,{error:{code:'BOOKING_CANNOT_BE_CANCELLED'}});
         booking.status='CANCELLED';return reply(204);
     }
     reply(404,{error:{code:'NOT_FOUND'}});

@@ -1,4 +1,5 @@
 -- Run after contention, before cancelling its winning booking.
+-- Requires Flyway V9__soft_cancel_bookings.sql or later.
 -- psql: \set showtime_id 'uuid-from-fixtures'
 --       \set seat_id 'uuid-from-fixtures'
 -- Expected: active_claims=1, confirmed_bookings=1, duplicate_groups=0.

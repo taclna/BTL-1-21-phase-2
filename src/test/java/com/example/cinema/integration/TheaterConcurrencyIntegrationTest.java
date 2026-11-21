@@ -3,6 +3,7 @@ package com.example.cinema.integration;
 import com.example.cinema.modules.booking.business.Booking;
 import com.example.cinema.modules.booking.business.BookingService;
 import com.example.cinema.modules.booking.business.BookingStatus;
+import com.example.cinema.modules.booking.business.SeatAlreadyBookedException;
 import com.example.cinema.modules.theater.business.*;
 import com.example.cinema.modules.theater.data.ShowtimeEntity;
 import com.example.cinema.modules.theater.data.ShowtimeJpaRepository;
@@ -126,7 +127,7 @@ class TheaterConcurrencyIntegrationTest {
         Booking original = bookings.createBooking(user, showtime.id(), List.of(seat));
 
         assertThatThrownBy(() -> bookings.createBooking(user, showtime.id(), List.of(seat)))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(SeatAlreadyBookedException.class);
 
         bookings.cancelBooking(user, original.getBookingId());
         Booking replacement = bookings.createBooking(user, showtime.id(), List.of(seat));

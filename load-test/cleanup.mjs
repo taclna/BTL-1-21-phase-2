@@ -11,6 +11,7 @@ for(const user of users) {
     if(!Array.isArray(bookings)) throw new Error('Booking list did not return an array');
     for(const booking of bookings) {
         if(!booking.bookingId) throw new Error('Booking list did not return bookingId');
+        if(booking.status!=='CONFIRMED') continue;
         const cancelled=await fetch(base+'/api/v1/bookings/'+booking.bookingId,{method:'DELETE',headers:{Authorization:'Bearer '+user.token}});
         if(cancelled.status!==204) throw new Error('Cannot cancel fixture booking');
     }
