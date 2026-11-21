@@ -105,6 +105,19 @@ class ApplicationSmokeTest {
     }
 
     @Test
+    void prometheusEndpointIsPublicInTestProfile() {
+        restTemplate.getForEntity("/actuator/health/liveness", JsonNode.class);
+        ResponseEntity<String> response = restTemplate.getForEntity("/actuator/prometheus", String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).contains(
+                "http_server_requests_seconds_count",
+                "jvm_memory_used_bytes",
+                "jvm_gc_",
+                "process_cpu_usage");
+    }
+
+    @Test
     void demoAdminSeederIsEnabledInTestProfileWithoutDemoSettings() {
         assertThat(applicationContext.getBeansOfType(DemoAdminSeeder.class)).hasSize(1);
     }

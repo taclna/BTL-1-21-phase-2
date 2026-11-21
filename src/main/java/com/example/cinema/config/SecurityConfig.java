@@ -54,6 +54,7 @@ public class SecurityConfig {
             JwtTokenService jwtTokenService
     ) throws Exception {
         boolean docsPublic = environment.acceptsProfiles(Profiles.of("local", "test"));
+        boolean prometheusPublic = environment.acceptsProfiles(Profiles.of("local", "test", "perf"));
         var paths = PathPatternRequestMatcher.withDefaults();
         List<RequestMatcher> publicMatchers = new ArrayList<>(List.of(
                 paths.matcher(HttpMethod.POST, "/api/v1/auth/register"),
@@ -69,6 +70,9 @@ public class SecurityConfig {
             publicMatchers.addAll(List.of(
                     paths.matcher("/swagger-ui.html"), paths.matcher("/swagger-ui/**"),
                     paths.matcher("/v3/api-docs"), paths.matcher("/v3/api-docs/**")));
+        }
+        if (prometheusPublic) {
+            publicMatchers.add(paths.matcher(HttpMethod.GET, "/actuator/prometheus"));
         }
         RequestMatcher publicRoutes = new OrRequestMatcher(publicMatchers);
         AuthenticationEntryPoint authenticationEntryPoint = (request, response, exception) ->

@@ -1,0 +1,14 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+management:
+  prometheus:
+    metrics:
+      export:
+        enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: "health"
