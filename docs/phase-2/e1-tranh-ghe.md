@@ -116,10 +116,10 @@ Xem [work_plan.md](work_plan.md). Tóm tắt phần của E1:
 
 | Người | Việc |
 |---|---|
-| Người 1 | 0.9 mã booking, 0.10 Admin xem mọi booking, 0.11 phân trang `GET /bookings` (Người 4 review); lấy mẫu `pg_stat_activity` và đếm deadlock trong `run-baseline.py`; metrics Hikari; quản lý tag |
-| Người 2 | Sửa 0.4–0.5; viết `hot-showtime.js`, `SEED_SCOPE=hot`; chạy đo trên Kaggle |
+| Người 1 | Hoàn thiện 0.1–0.8, ưu tiên 0.7 hủy mềm và partial index để đạt CP1a (Người 4 review); lấy mẫu `pg_stat_activity` và đếm deadlock trong `run-baseline.py`; metrics Hikari; quản lý tag |
+| Người 2 | Thêm `Idempotency-Key` vào script Phase 2; viết `hot-showtime.js`, `SEED_SCOPE=hot`; chạy đo trên Kaggle; hỗ trợ rà script 0.4–0.5 sau khi contract được merge |
 | Người 3 | Method khóa chia sẻ trong `ShowtimeModuleApi`; `overlap.js`; giữ test hủy suất đồng thời |
-| Người 4 | Sửa 0.1–0.3, 0.6; 0.7 hủy mềm và partial index; 0.8 quy tắc 30 phút; triển khai B (tuần 2) và C (tuần 3); test deadlock với booking nhiều ghế |
+| Người 4 | Hoàn thiện 0.9 mã booking, 0.10 Admin xem mọi booking và 0.11 phân trang `GET /bookings` sau CP1a (Người 1 review); triển khai B (tuần 2) và C (tuần 3); test deadlock với booking nhiều ghế |
 
 Mốc của E1: tag `phase-1-baseline` chậm nhất thứ Ba 24/11; chạy thử A trên Kaggle ở tuần 2; đóng băng các tag B/C cuối tuần 3; đo chính thức ở tuần 4 (2 phiên, thứ tự A→B→C và C→B→A); chốt ADR-002 ở tuần 5.
 

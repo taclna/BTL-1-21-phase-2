@@ -2,7 +2,7 @@
 
 > Thời gian: 16/11 – 20/12/2026 (5 giai đoạn, 5 checkpoint) · Nội dung kỹ thuật: [ke-hoach.md](ke-hoach.md)\
 > Giữ cách chia module của [Pha 1](../phase-1/work_plan.md): mỗi người chịu trách nhiệm module của mình xuyên ba tầng.\
-> Cập nhật 20/11/2026: chia theo giai đoạn và checkpoint; cân lại việc cho Người 4; đưa ADR-006 vào Pha 2 thành thí nghiệm E7.
+> Cập nhật 21/11/2026: chia lại Bước 0 — Người 1 làm 0.1–0.8, Người 4 làm 0.9–0.11; ADR-006 vẫn thuộc Pha 2 dưới dạng thí nghiệm E7.
 
 ## 1. Quyết định đã chốt
 
@@ -15,20 +15,20 @@
 | 5 | 15/11 | Mỗi phương án là một tag; các phương án của một thí nghiệm đo trong cùng một phiên Kaggle |
 | 6 | 16/11 | Ưu tiên E4 trước E2: phân trang Booking làm ở Bước 0; đo và sửa N+1/query/index trước khi đo cache |
 | 7 | 20/11 | Idempotency ([ADR-006](adr/006-idempotency-booking.md)) làm **trong Pha 2** thành thí nghiệm E7, trên tag riêng `phase-2-idempotency`, không nằm trong Bước 0. Script k6 gửi `Idempotency-Key` từ GĐ1 để A, B, C của E1 vẫn chạy cùng contract. Người 1 làm, Người 4 review |
-| 8 | 20/11 | Phân trang `GET /bookings` (0.11) chuyển từ Người 4 sang Người 1, cùng mẫu với `GET /admin/bookings`. Cập nhật sơ đồ luồng nghiệp vụ chuyển sang Người 3. Mục đích: giảm tải cho Người 4, người nằm trên đường găng |
+| 8 | 21/11 | Chia lại Bước 0: Người 1 chịu trách nhiệm toàn bộ 0.1–0.8 (sửa contract Booking, hủy mềm và quy tắc 30 phút); Người 4 chịu trách nhiệm 0.9–0.11 (mã booking, API Admin và phân trang). Người 1 ưu tiên merge 0.7 thành CP1a để mở khóa phần việc phụ thuộc schema của Người 4. Cập nhật sơ đồ luồng nghiệp vụ vẫn do Người 3 làm |
 
 ## 2. Vai trò
 
 | Người | Module | Phụ trách ở Pha 2 | Review chéo |
 |---|---|---|---|
-| Người 1 | identity, hạ tầng | Bước 0: mã booking, Admin xem mọi booking, phân trang `GET /bookings` (*); E7 idempotency (*); E5 observability; hạ tầng E6 (nginx, Redis, ghim CPU, compose demo); notebook chạy nhiều cấu hình; quản lý tag; duyệt mọi thay đổi `pom.xml`, `config`, `shared` | Người 4 |
+| Người 1 | identity, hạ tầng | Bước 0: 0.1–0.8 — sửa contract Booking, hủy mềm, quy tắc 30 phút (*); E7 idempotency (*); E5 observability; hạ tầng E6 (nginx, Redis, ghim CPU, compose demo); notebook chạy nhiều cấu hình; quản lý tag; duyệt mọi thay đổi `pom.xml`, `config`, `shared` | Người 4 |
 | Người 2 | movie, k6 | Script k6 (sửa S1/S3, viết S2, S5, S6), seed `large` và `hot`; E2 cache Movie và profile Redis; chạy đo Kaggle; OpenAPI và README; viết báo cáo chính | Người 3 |
 | Người 3 | theater | Method khóa chia sẻ (E1); S4 `overlap.js`; E2 cache lịch chiếu và snapshot suất; E3 rate limiting; cập nhật sơ đồ luồng nghiệp vụ; script tổng hợp và biểu đồ | Người 2 |
-| Người 4 | booking | Bước 0: sửa lỗi contract Booking, hủy mềm, quy tắc 30 phút; E4 sửa N+1 và index; E1 phương án B, C; review E7; chốt ADR-002 | Người 1 |
+| Người 4 | booking | Bước 0: 0.9–0.11 — mã booking, Admin xem mọi booking, phân trang `GET /bookings`; E4 sửa N+1 và index; E1 phương án B, C; review E7; chốt ADR-002 | Người 1 |
 
-(*) Ngoại lệ có chủ đích với quy tắc "mỗi người sửa module của mình". Người 1 viết các phần này trong module `booking` để giảm tải cho Người 4. Người 4 review và là chủ sở hữu code sau khi merge.
+(*) Ngoại lệ có chủ đích với quy tắc "mỗi người sửa module của mình". Người 1 viết 0.1–0.8 và E7 trong module `booking`; Người 4 review và là chủ sở hữu code sau khi merge. Người 1 review chéo phần 0.9–0.11 của Người 4.
 
-**Đường găng:** migration hủy mềm (Người 4) → mọi việc khác của Bước 0 → tag `phase-1-baseline` → mọi phép đo. Trễ ở đây kéo trễ cả nhóm, nên khi Người 4 bị chặn, người khác ưu tiên gỡ trước việc của mình.
+**Đường găng:** migration hủy mềm (Người 1) → 0.9–0.11 của Người 4 và các việc còn lại của Bước 0 → tag `phase-1-baseline` → mọi phép đo. Trễ ở đây kéo trễ cả nhóm, nên Người 1 phải ưu tiên CP1a trước các việc khác; khi đường găng bị chặn, cả nhóm ưu tiên gỡ trước việc của mình.
 
 ## 3. Tổng quan giai đoạn
 
@@ -48,14 +48,14 @@ Mỗi checkpoint là một buổi họp ngắn. Người 1 điều phối và gh
 
 Chi tiết kỹ thuật của từng dòng 0.x ở [E1 mục 3](e1-tranh-ghe.md#3-bước-0-hoàn-thiện-pha-1-theo-spec).
 
-**Mốc phụ CP1a: schema hủy mềm đã merge.** Hạn gốc thứ Tư 18/11. Nếu chưa merge, hạn cuối là **thứ Bảy 21/11**, vì Người 1 và Người 2 phải làm trên schema mới.
+**Mốc phụ CP1a: schema hủy mềm đã merge.** Người 1 chịu trách nhiệm. Hạn gốc thứ Tư 18/11. Nếu chưa merge, hạn cuối là **thứ Bảy 21/11**, vì Người 4 cần schema mới cho 0.9–0.11 và Người 2 cần contract/schema ổn định để cập nhật script.
 
 | Người | Việc | Phụ thuộc | Sản phẩm |
 |---|---|---|---|
-| 1 | 0.9 mã booking (cột, migration sinh mã cho booking cũ, trả trong response); 0.10 `GET /api/v1/admin/bookings` có phân trang, Admin xem chi tiết và hủy mọi booking, test 401/403; 0.11 phân trang `GET /bookings`; thêm `micrometer-registry-prometheus`, mở `/actuator/prometheus` ở profile đo | Chờ CP1a | PR mã booking; PR Admin + phân trang; PR metrics |
-| 2 | Sửa `contention.js`, `verify-contention.sql`, `client-check.mjs`, `booking.js` theo `{data}`, phân trang và hủy mềm; mọi `POST /bookings` trong script gửi header `Idempotency-Key` (UUID mới mỗi lần đặt); viết S5 `stress-read.js`; bắt đầu seed `SEED_SCOPE=large` | Shape response chốt trong PR của Người 4 | Script chạy được ở local |
+| 1 | **Ưu tiên 1:** 0.7 migration hủy mềm + partial index (CP1a). Hoàn thiện 0.1–0.8: `SeatAlreadyBookedException` → 409; ánh xạ lỗi partial index → 409; error envelope; bọc `{data}`; cập nhật và chạy `contention.js`, `verify-contention.sql`, `client-check.mjs`, `booking.js` cho 0.4–0.5; integration test hai khách cùng ghế; quy tắc 30 phút → `409 BOOKING_CANNOT_BE_CANCELLED`. Đồng thời thêm `micrometer-registry-prometheus`, mở `/actuator/prometheus` ở profile đo | — | PR migration CP1a; PR contract + hủy Booking; PR script 0.4–0.5; PR metrics |
+| 2 | Mọi `POST /bookings` trong script gửi header `Idempotency-Key` (UUID mới mỗi lần đặt); viết S5 `stress-read.js`; bắt đầu seed `SEED_SCOPE=large`; hỗ trợ rà lại script sau khi contract 0.4–0.5 được merge | Shape response chốt trong PR của Người 1 | Script Phase 2 chạy được ở local |
 | 3 | Method khóa chia sẻ trong `ShowtimeModuleApi` kèm unit test; bắt đầu S4 `overlap.js` | — | PR interface Theater (merge sớm nhất có thể) |
-| 4 | **Ưu tiên 1:** 0.7 migration hủy mềm + partial index (CP1a). Sau đó: 0.1 `SeatAlreadyBookedException` → 409; 0.2 lỗi vi phạm partial index → 409; 0.3 error envelope; 0.4 bọc `{data}`; 0.8 quy tắc 30 phút → `409 BOOKING_CANNOT_BE_CANCELLED`; 0.6 integration test hai khách cùng ghế, hủy rồi đặt lại, hủy sát giờ bị từ chối | — | PR migration; PR Booking |
+| 4 | Sau CP1a, hoàn thiện 0.9 mã booking (cột, migration sinh mã cho booking cũ, trả trong response); 0.10 `GET /api/v1/admin/bookings` có phân trang, Admin xem chi tiết và hủy mọi booking, test 401/403; 0.11 phân trang `GET /bookings` và cập nhật `booking.js` theo response phân trang | CP1a; contract 0.3–0.4 của Người 1 đã chốt | PR mã booking; PR Admin + phân trang |
 
 **CP1 (thứ Ba 24/11): Baseline**
 
