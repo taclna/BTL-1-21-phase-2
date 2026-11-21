@@ -199,4 +199,4 @@ Kết quả áp dụng cho điều kiện tải đã đo; chưa xác định t�
 
 - [Đặc tả hệ thống](docs/phase-1/SPEC.md)
 - [Quyết định kiến trúc modular monolith](docs/phase-1/adr/001-modular-monolith-3-tier.md)
-- Pha 2: [kế hoạch](docs/phase-2/ke-hoach.md) · [phân công 5 tuần](docs/phase-2/work_plan.md) · [E1 tranh ghế](docs/phase-2/e1-tranh-ghe.md) · ADR [002](docs/phase-2/adr/002-kiem-soat-tranh-ghe.md), [003](docs/phase-2/adr/003-cache-doc.md), [004](docs/phase-2/adr/004-rate-limiting.md), [005](docs/phase-2/adr/005-mo-rong-ngang.md)
+- Pha 2: [kế hoạch](docs/phase-2/ke-hoach.md) · [phân công 5 tuần](docs/phase-2/work_plan.md) · [E1 tranh ghế](docs/phase-2/e1-tranh-ghe.md) · ADR [002](docs/phase-2/adr/002-kiem-soat-tranh-ghe.md), [003](docs/phase-2/adr/003-cache-doc.md), [004](docs/phase-2/adr/004-rate-limiting.md), [005](docs/phase-2/adr/005-mo-rong-ngang.md), [006](docs/phase-2/adr/006-idempotency-booking.md)

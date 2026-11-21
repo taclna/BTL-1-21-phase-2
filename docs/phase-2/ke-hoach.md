@@ -11,7 +11,7 @@
 Pha 1 đã có hệ thống chạy đúng và một baseline đo ở mức 10/25/50 VU. Baseline đó **chưa tìm ra điểm bão hòa** và **chưa đo tranh ghế**. Pha 2 làm hai việc:
 
 1. Tạo số liệu mà Pha 1 chưa có: đẩy tải đến khi hệ thống chậm, đo tranh ghế, đo trên dataset lớn.
-2. Thử 6 cải tiến (E1–E6). Mỗi cải tiến được so với baseline bằng số liệu, rồi kết luận giữ hay bỏ kèm trade-off.
+2. Thử 7 cải tiến (E1–E7). Mỗi cải tiến được so với baseline bằng số liệu, rồi kết luận giữ hay bỏ kèm trade-off.
 
 Nguyên tắc giữ theo [SPEC mục 17](../phase-1/SPEC.md): mỗi lần chỉ thay một nhóm yếu tố, chạy lại cùng cấu hình, so sánh cả hiệu năng, tài nguyên và tính đúng.
 
@@ -22,11 +22,12 @@ Nguyên tắc giữ theo [SPEC mục 17](../phase-1/SPEC.md): mỗi lần chỉ 
 | E1 | [Tranh ghế](e1-tranh-ghe.md) | Consistency, performance | A khóa cả suất / B khóa chia sẻ / C khóa từng ghế | [002](adr/002-kiem-soat-tranh-ghe.md) | Bắt buộc |
 | E4 | Tối ưu query / index | Performance | Hiện tại / đã tối ưu, trên dataset lớn | — | Bắt buộc |
 | E5 | Observability | Observability | Tắt / bật metrics Prometheus | — | Bắt buộc |
+| E7 | Idempotency `POST /bookings` | Reliability, consistency | Không có / có idempotency key | [006](adr/006-idempotency-booking.md) | Bắt buộc (phần tính đúng); phần đo overhead cắt được |
 | E2 | Cache đọc | Performance, scalability | Không cache / Caffeine | [003](adr/003-cache-doc.md) | Nên có |
 | E3 | Rate limiting / backpressure | Availability | Không giới hạn / giới hạn số request đồng thời | [004](adr/004-rate-limiting.md) | Nên có |
 | E6 | Nhiều replica | Scalability, availability | 1 / 2 instance qua nginx; cache Caffeine riêng / Redis chung | [005](adr/005-mo-rong-ngang.md) | Có thể bỏ |
 
-Cột "Ưu tiên" là thứ tự cắt khi bị trễ, xem [work_plan.md mục 5](work_plan.md#5-ưu-tiên-và-điểm-cắt).
+Cột "Ưu tiên" là thứ tự cắt khi bị trễ, xem [work_plan.md mục 6](work_plan.md#6-ưu-tiên-và-điểm-cắt).
 
 ## 3. Bước 0: hoàn thiện Pha 1 theo SPEC
 
@@ -38,7 +39,7 @@ Trước mọi phép đo phải làm xong hai nhóm việc, chi tiết ở [E1 m
    - Chỉ cho hủy trước giờ chiếu ít nhất 30 phút.
    - Mã booking khó đoán.
    - Admin xem mọi booking: `GET /api/v1/admin/bookings`, xem chi tiết và hủy mọi booking.
-   - `GET /api/v1/bookings` có `page`/`pageSize` và response phân trang đúng SPEC 7.5.
+   - `GET /api/v1/bookings` có `page`/`pageSize` và response phân trang đúng SPEC 7.5 (E1 mục 3, dòng 0.11).
 
 Sau đó gắn tag **`phase-1-baseline`**, chậm nhất thứ Ba 24/11. Đây là phương án A, và mọi thí nghiệm so với tag này. Số liệu 28/10 đo trước khi đổi schema nên chỉ dùng tham khảo, không so trực tiếp.
 
@@ -173,26 +174,38 @@ Cả hai cấu hình đều đi qua nginx để overhead của nginx như nhau. 
 
 **Demo local:** `compose.scale.yaml` gồm nginx, 2 API, PostgreSQL, Redis.
 
-## 11. Cấu hình tổng hợp
+## 11. E7: idempotency cho tạo booking
 
-Cuối tuần 4, ghép các phương án được giữ từ E1–E5 vào tag `phase-2-final`. Chạy S3 (10/25/50/100 VU), S5 và S6, so với `phase-1-baseline` trong cùng một phiên. Đây là bảng kết luận chính của báo cáo.
+Thiết kế ở [ADR-006](adr/006-idempotency-booking.md). Phần này chỉ ghi cách đưa E7 vào Pha 2 mà không phá so sánh của E1.
 
-## 12. Tiêu chí kết luận chung
+**Giữ so sánh công bằng:** từ GĐ1, mọi script k6 có `POST /bookings` (`booking.js`, `contention.js`, `hot-showtime.js`, `overlap.js`) luôn gửi header `Idempotency-Key` với một UUID mới cho mỗi lần đặt. Phiên bản chưa có E7 bỏ qua header lạ, nên A, B, C của E1 vẫn chạy cùng một contract. E7 nằm trên tag riêng `phase-2-idempotency`, tách từ `phase-1-baseline`.
+
+**Tính đúng:** 10 test chấp nhận trong ADR-006. Test 3 (cùng key gửi đồng thời qua hai instance) dùng hạ tầng nginx của E6. Nếu E6 bị cắt, test 3 vẫn chạy với hai instance ở local hoặc qua `compose.scale.yaml`.
+
+**Đo overhead:** S2 và S3 ở 50 VU, so `phase-1-baseline` với `phase-2-idempotency` trong cùng một phiên. Chỉ số: throughput, p95 POST, số query mỗi request tạo booking. Thêm một lượt retry: script gửi lại mỗi request đặt vé một lần với cùng key, kiểm tra số booking trong DB bằng số ý định đặt và mọi lần gửi lại đều nhận `200` kèm `Idempotency-Replayed: true`.
+
+**Kết luận:** E7 được đưa vào `phase-2-final` khi mọi test tính đúng pass, kể cả khi có overhead. Overhead được báo cáo như một trade-off, không phải lý do để bỏ.
+
+## 12. Cấu hình tổng hợp
+
+Cuối tuần 4, ghép các phương án được giữ từ E1–E5 và E7 vào tag `phase-2-final`. Chạy S3 (10/25/50/100 VU), S5 và S6, so với `phase-1-baseline` trong cùng một phiên. Đây là bảng kết luận chính của báo cáo.
+
+## 13. Tiêu chí kết luận chung
 
 1. Phương án làm sai tính đúng (double-booking, đặt vào suất đã hủy, cache trả dữ liệu cũ khi chỉ có một instance) bị loại.
 2. Chỉ tính là cải thiện khi chênh lệch median lớn hơn khoảng min–max của cả hai phương án.
 3. Không cải thiện thì giữ baseline và ghi kết luận "không cải thiện" kèm số liệu. Đây vẫn là kết quả hợp lệ.
 4. Mỗi thí nghiệm kết luận kèm trade-off: độ phức tạp, vận hành, rủi ro dữ liệu cũ, request bị từ chối.
 
-## 13. Ngoài phạm vi Pha 2
+## 14. Ngoài phạm vi Pha 2
 
 Thanh toán thật, giữ ghế tạm và hết hạn, microservices, message broker, distributed tracing.
 
 Hủy mềm, quy tắc 30 phút, mã booking và Admin xem mọi booking **thuộc phạm vi** và làm ở bước 0 (mục 3). Chúng được làm trước khi gắn `phase-1-baseline` để A, B, C cùng chạy trên một schema.
 
-Idempotency cho `POST /api/v1/bookings` được ghi nhận tại [ADR-006](adr/006-idempotency-booking.md) như một đề xuất cải thiện reliability và consistency. Hạng mục này chưa nằm trong E1–E6 và chưa tự động trở thành phần bắt buộc của Pha 2; nhóm chỉ triển khai sau Bước 0 nếu còn nguồn lực, nếu không chuyển sang Pha 3.
+Idempotency cho `POST /api/v1/bookings` ([ADR-006](adr/006-idempotency-booking.md)) **thuộc phạm vi Pha 2** dưới dạng thí nghiệm E7 (mục 11). Nó không nằm trong Bước 0 nên không làm lùi CP1.
 
-## 14. Ước lượng thời gian chạy trên Kaggle
+## 15. Ước lượng thời gian chạy trên Kaggle
 
 | Thí nghiệm | Ước lượng mỗi phương án | Số phương án | Tổng |
 |---|---|---|---|
@@ -202,6 +215,7 @@ Idempotency cho `POST /api/v1/bookings` được ghi nhận tại [ADR-006](adr/
 | E4 (S7 + S3) | 40 phút, chưa tính seed | 2 | 1,5 giờ |
 | E5 (overhead) | 20 phút | 2 | 40 phút |
 | E6 | 30 phút | 3 cấu hình | 1,5 giờ |
+| E7 (S2 + S3 50 VU + lượt retry) | 30 phút | 2 | 1 giờ |
 | Cấu hình tổng hợp | 60 phút | 2 | 2 giờ |
 
-Tổng khoảng 15 giờ, chia 3–4 phiên (mỗi phiên tối đa 12 giờ). Phân bổ phiên xem [work_plan.md](work_plan.md).
+Tổng khoảng 16 giờ, chia 3 phiên (mỗi phiên tối đa 12 giờ). Phân bổ phiên xem [work_plan.md](work_plan.md).
