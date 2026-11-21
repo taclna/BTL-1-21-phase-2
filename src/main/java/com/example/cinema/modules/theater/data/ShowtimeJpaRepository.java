@@ -17,6 +17,10 @@ public interface ShowtimeJpaRepository extends JpaRepository<ShowtimeEntity, UUI
     @Query("select s from ShowtimeEntity s where s.id = :id")
     Optional<ShowtimeEntity> findByIdForUpdate(UUID id);
 
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("select s from ShowtimeEntity s where s.id = :id")
+    Optional<ShowtimeEntity> findByIdForShare(UUID id);
+
     boolean existsByAuditoriumIdAndStartsAtLessThanAndEndsAtGreaterThanAndStatusNot(
             UUID auditoriumId,
             Instant endsAt,
