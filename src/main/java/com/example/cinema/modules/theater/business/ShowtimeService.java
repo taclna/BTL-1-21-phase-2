@@ -132,6 +132,12 @@ public class ShowtimeService implements ShowtimeModuleApi {
     }
 
     @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public ShowtimeSnapshot lockShowtimeShareForBooking(UUID showtimeId) {
+        return showtimeRepository.findByIdForShare(showtimeId).map(this::toSnapshot).orElse(null);
+    }
+
+    @Override
     public List<SeatSnapshot> getSeatSnapshots(List<UUID> seatIds) {
         if (seatIds == null || seatIds.isEmpty()) {
             return List.of();

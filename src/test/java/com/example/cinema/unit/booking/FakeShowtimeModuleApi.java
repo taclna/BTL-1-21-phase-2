@@ -38,6 +38,11 @@ class FakeShowtimeModuleApi implements ShowtimeModuleApi {
     }
 
     @Override
+    public ShowtimeSnapshot lockShowtimeShareForBooking(UUID showtimeId) {
+        return getShowtimeSnapshot(showtimeId);
+    }
+
+    @Override
     public List<SeatSnapshot> getSeatSnapshots(List<UUID> seatIds) {
         return seats.stream().filter(seat -> seatIds.contains(seat.seatId())).toList();
     }
