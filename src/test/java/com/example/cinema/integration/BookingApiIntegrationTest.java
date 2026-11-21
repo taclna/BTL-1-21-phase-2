@@ -22,6 +22,8 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -197,6 +199,26 @@ class BookingApiIntegrationTest {
                 .isEqualTo("SHOWTIME_NOT_FOUND");
     }
 
+    @Test
+    void prometheusExportsRuntimeAndBookingBusinessMetrics() {
+        String before = prometheusMetrics();
+        double bookingsBefore = metricValue(before, "booking_creation_total");
+        double conflictsBefore = metricValue(before, "booking_seat_conflict_total");
+
+        assertThat(createBooking(firstCustomer, seatId).getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(createBooking(secondCustomer, seatId).getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+
+        String metrics = prometheusMetrics();
+        assertThat(metricValue(metrics, "booking_creation_total")).isEqualTo(bookingsBefore + 1);
+        assertThat(metricValue(metrics, "booking_seat_conflict_total")).isEqualTo(conflictsBefore + 1);
+        assertThat(metrics).contains(
+                "http_server_requests_seconds_count",
+                "hikaricp_connections_active",
+                "jvm_memory_used_bytes",
+                "jvm_gc_",
+                "process_cpu_usage");
+    }
+
     private UUID insertCustomer() {
         UUID userId = UUID.randomUUID();
         jdbc.update("""
@@ -221,6 +243,19 @@ class BookingApiIntegrationTest {
                 HttpMethod.GET,
                 new HttpEntity<>(bearerHeaders(customerId)),
                 JsonNode.class);
+    }
+
+    private String prometheusMetrics() {
+        ResponseEntity<String> response = restTemplate.getForEntity("/actuator/prometheus", String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        return response.getBody();
+    }
+
+    private double metricValue(String metrics, String metricName) {
+        Pattern pattern = Pattern.compile("(?m)^" + Pattern.quote(metricName) + " ([0-9.Ee+-]+)$");
+        Matcher matcher = pattern.matcher(metrics);
+        return matcher.find() ? Double.parseDouble(matcher.group(1)) : 0;
     }
 
     private void assertSeatStatus(String expectedStatus) {

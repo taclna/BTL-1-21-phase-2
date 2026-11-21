@@ -12,6 +12,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @AutoConfigureMockMvc
@@ -45,5 +46,11 @@ class ProductionDocsSecurityTest {
     @Test
     void demoAdminSeederIsNotLoadedInProduction() {
         org.assertj.core.api.Assertions.assertThat(applicationContext.getBeansOfType(DemoAdminSeeder.class)).isEmpty();
+    }
+
+    @Test
+    void prometheusEndpointIsNotExposedInProduction() throws Exception {
+        mockMvc.perform(get("/actuator/prometheus").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isNotFound());
     }
 }
