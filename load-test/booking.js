@@ -1,6 +1,6 @@
 import exec from 'k6/execution';
 import { fail, sleep } from 'k6';
-import { VUS, constantOptions, fixture, request, data, cleanupUsers, summary } from './lib/common.js';
+import { VUS, constantOptions, fixture, request, parse, data, cleanupUsers, summary } from './lib/common.js';
 const saved = fixture(true);
 export const options = constantOptions(true);
 const bookingsByUser = {};
@@ -32,7 +32,8 @@ export function traffic() {
         }
         delete bookingsByUser[user.userId];
         const response = request('POST','/api/v1/bookings',{ showtimeId: saved.showtimeId, seatIds: [user.seatId] },user.token,[201],'booking');
-        const result = data(response);
+        const body = parse(response);
+        const result = body && body.data;
         if (response.status === 201 && result && result.bookingId) bookingsByUser[user.userId] = result.bookingId;
         else fail('Booking did not return its ID');
     } else request('GET','/api/v1/bookings',null,user.token);

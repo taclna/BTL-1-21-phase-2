@@ -75,6 +75,7 @@ export function cleanupUsers(users) {
         if (response.status !== 200 || !Array.isArray(bookings)) fail('Cannot list bookings for cleanup');
         for (const booking of bookings) {
             if (!booking.bookingId) fail('Booking list did not return bookingId');
+            if (booking.status !== 'CONFIRMED') continue;
             const cancelled = request('DELETE', '/api/v1/bookings/' + booking.bookingId, null,
                 user.token, [204], 'cleanup', 'cleanup');
             if (cancelled.status !== 204) fail('Fixture booking cleanup failed');

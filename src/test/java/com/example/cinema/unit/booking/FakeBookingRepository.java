@@ -2,8 +2,10 @@ package com.example.cinema.unit.booking;
 
 import com.example.cinema.modules.booking.business.Booking;
 import com.example.cinema.modules.booking.business.BookingRepository;
+import com.example.cinema.modules.booking.business.BookingStatus;
 import com.example.cinema.modules.booking.business.bookingSeat;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -22,11 +24,13 @@ class FakeBookingRepository implements BookingRepository {
             removeActiveSeats(previousBooking);
         }
 
-        for (bookingSeat seat : booking.getSeats()) {
-            activeBookingBySeat.put(
-                    new SeatKey(booking.getShowtimeId(), seat.getSeatId()),
-                    booking.getBookingId()
-            );
+        if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            for (bookingSeat seat : booking.getSeats()) {
+                activeBookingBySeat.put(
+                        new SeatKey(booking.getShowtimeId(), seat.getSeatId()),
+                        booking.getBookingId()
+                );
+            }
         }
         return booking;
     }
@@ -42,6 +46,11 @@ class FakeBookingRepository implements BookingRepository {
     }
 
     @Override
+    public Optional<Booking> findByIdAndUserIdForUpdate(UUID bookingId, UUID userId) {
+        return findByIdAndUserId(bookingId, userId);
+    }
+
+    @Override
     public java.util.List<Booking> findAllByUserId(UUID userId) {
         return bookingsById.values().stream()
                 .filter(booking -> booking.getUserId().equals(userId))
@@ -54,16 +63,22 @@ class FakeBookingRepository implements BookingRepository {
     }
 
     @Override
-    public void deleteById(UUID bookingId) {
-        Booking booking = bookingsById.remove(bookingId);
+    public void cancelById(UUID bookingId, Instant cancelledAt) {
+        Booking booking = bookingsById.get(bookingId);
         if (booking != null) {
             removeActiveSeats(booking);
+            bookingsById.put(bookingId, new Booking(
+                    booking.getBookingId(), booking.getUserId(), booking.getShowtimeId(), booking.getSeats(),
+                    booking.getTotalAmount(), booking.getCreatedAt(), booking.getPaymentStatus(),
+                    BookingStatus.CANCELLED, cancelledAt));
         }
     }
 
     @Override
     public boolean existsConfirmedByShowtimeId(UUID showtimeId) {
-        return bookingsById.values().stream().anyMatch(booking -> booking.getShowtimeId().equals(showtimeId));
+        return bookingsById.values().stream().anyMatch(booking ->
+                booking.getShowtimeId().equals(showtimeId)
+                        && booking.getStatus() == BookingStatus.CONFIRMED);
     }
 
     @Override

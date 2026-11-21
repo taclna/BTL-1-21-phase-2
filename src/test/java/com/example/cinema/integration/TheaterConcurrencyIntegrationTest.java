@@ -1,6 +1,9 @@
 package com.example.cinema.integration;
 
+import com.example.cinema.modules.booking.business.Booking;
 import com.example.cinema.modules.booking.business.BookingService;
+import com.example.cinema.modules.booking.business.BookingStatus;
+import com.example.cinema.modules.booking.business.SeatAlreadyBookedException;
 import com.example.cinema.modules.theater.business.*;
 import com.example.cinema.modules.theater.data.ShowtimeEntity;
 import com.example.cinema.modules.theater.data.ShowtimeJpaRepository;
@@ -96,6 +99,46 @@ class TheaterConcurrencyIntegrationTest {
         assertThatThrownBy(() -> showtimes.cancel(showtime.id())).isInstanceOf(ShowtimeHasBookingsException.class);
         assertThat(showtimes.findById(showtime.id()).status()).isEqualTo(ShowtimeStatus.SCHEDULED);
         assertThat(bookings.getSeatAvailability(showtime.id()).getFirst().booked()).isTrue();
+    }
+
+    @Test
+    void softCancellationKeepsHistoryReleasesSeatAndStopsBlockingShowtime() {
+        Showtime showtime = create(start);
+        UUID seat = auditoriums.findSeats(room.id()).getFirst().id();
+        Booking original = bookings.createBooking(user, showtime.id(), List.of(seat));
+
+        bookings.cancelBooking(user, original.getBookingId());
+
+        Booking cancelled = bookings.getBookingByUserId(user, original.getBookingId());
+        assertThat(cancelled.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+        assertThat(cancelled.getCancelledAt()).isNotNull();
+        assertThat(jdbc.queryForObject("select count(*) from bookings where id = ?", Integer.class,
+                original.getBookingId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from booking_seats where booking_id = ? and released_at is not null",
+                Integer.class, original.getBookingId())).isEqualTo(1);
+        assertThat(bookings.getSeatAvailability(showtime.id()).getFirst().booked()).isFalse();
+        assertThatCode(() -> showtimes.cancel(showtime.id())).doesNotThrowAnyException();
+    }
+
+    @Test
+    void partialUniqueIndexAllowsRebookingOnlyAfterSeatRelease() {
+        Showtime showtime = create(start);
+        UUID seat = auditoriums.findSeats(room.id()).getFirst().id();
+        Booking original = bookings.createBooking(user, showtime.id(), List.of(seat));
+
+        assertThatThrownBy(() -> bookings.createBooking(user, showtime.id(), List.of(seat)))
+                .isInstanceOf(SeatAlreadyBookedException.class);
+
+        bookings.cancelBooking(user, original.getBookingId());
+        Booking replacement = bookings.createBooking(user, showtime.id(), List.of(seat));
+
+        assertThat(replacement.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+        assertThat(jdbc.queryForObject("""
+                select count(*) from booking_seats
+                where showtime_id = ? and seat_id = ? and released_at is null
+                """, Integer.class, showtime.id(), seat)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from booking_seats where showtime_id = ? and seat_id = ?",
+                Integer.class, showtime.id(), seat)).isEqualTo(2);
     }
 
     @Test

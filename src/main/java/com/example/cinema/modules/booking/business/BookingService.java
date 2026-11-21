@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -68,20 +70,32 @@ public class BookingService {
     private void validateSeatAvailable(List<UUID> seatIds, UUID showtimeId) {
         for (UUID seatId : seatIds) {
             if (bookingRepository.existsByShowtimeIdAndSeatId(showtimeId, seatId)) {
-                throw new IllegalArgumentException("Seat has already been booked");
+                throw new SeatAlreadyBookedException();
             }
         }
     }
 
     @Transactional
-    public void deleteBooking(Booking booking) {
-        bookingRepository.deleteById(booking.getBookingId());
-    }
-
-    @Transactional
     public void cancelBooking(UUID userId, UUID bookingId) {
-        Booking booking = getBookingByUserId(userId, bookingId);
-        deleteBooking(booking);
+        if (userId == null || bookingId == null) {
+            throw new IllegalArgumentException("userId and bookingId must not be null");
+        }
+
+        Booking booking = bookingRepository.findByIdAndUserIdForUpdate(bookingId, userId)
+                .orElseThrow(() -> new BookingNotFoundException(bookingId));
+        if (booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw new BookingCannotBeCancelledException(bookingId);
+        }
+
+        ShowtimeSnapshot showtime = showtimeModuleApi.findShowtime(booking.getShowtimeId())
+                .orElseThrow(() -> new BookingCannotBeCancelledException(bookingId));
+        Instant now = clock.instant();
+        Instant cancellationDeadline = showtime.startsAt().minus(Duration.ofMinutes(30));
+        if (now.isAfter(cancellationDeadline)) {
+            throw new BookingCannotBeCancelledException(bookingId);
+        }
+
+        bookingRepository.cancelById(bookingId, now);
     }
 
     public List<Booking> getBookingsByUserId(UUID userId) {

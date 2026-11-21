@@ -1,6 +1,7 @@
 package com.example.cinema.modules.booking.data;
 
 import com.example.cinema.modules.booking.business.PaymentStatus;
+import com.example.cinema.modules.booking.business.BookingStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -34,16 +35,34 @@ class BookingEntity {
     @Column(name = "payment_status", nullable = false, length = 20)
     private PaymentStatus paymentStatus;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private BookingStatus status;
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
     protected BookingEntity() {
     }
 
-    BookingEntity(UUID id, UUID userId, UUID showtimeId, BigDecimal totalAmount, Instant createdAt, PaymentStatus paymentStatus) {
+    BookingEntity(
+            UUID id,
+            UUID userId,
+            UUID showtimeId,
+            BigDecimal totalAmount,
+            Instant createdAt,
+            PaymentStatus paymentStatus,
+            BookingStatus status,
+            Instant cancelledAt
+    ) {
         this.id = id;
         this.userId = userId;
         this.showtimeId = showtimeId;
         this.totalAmount = totalAmount;
         this.createdAt = createdAt;
         this.paymentStatus = paymentStatus;
+        this.status = status;
+        this.cancelledAt = cancelledAt;
     }
 
     UUID getId() { return id; }
@@ -52,4 +71,11 @@ class BookingEntity {
     BigDecimal getTotalAmount() { return totalAmount; }
     Instant getCreatedAt() { return createdAt; }
     PaymentStatus getPaymentStatus() { return paymentStatus; }
+    BookingStatus getStatus() { return status; }
+    Instant getCancelledAt() { return cancelledAt; }
+
+    void cancel(Instant cancellationTime) {
+        this.status = BookingStatus.CANCELLED;
+        this.cancelledAt = cancellationTime;
+    }
 }

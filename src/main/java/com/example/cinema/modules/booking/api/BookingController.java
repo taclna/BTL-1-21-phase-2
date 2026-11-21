@@ -27,29 +27,31 @@ public class BookingController {
     }
 
     @PostMapping
-    public ResponseEntity<BookingDetailResponse> create(
+    public ResponseEntity<BookingDataResponse<BookingDetailResponse>> create(
             @RequestBody CreateBookingRequest request,
             @AuthenticationPrincipal UUID userId
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(BookingDetailResponse.from(
-                bookingService.createBooking(userId, request.getShowtimeId(), request.getSeatIds())));
+        return ResponseEntity.status(HttpStatus.CREATED).body(new BookingDataResponse<>(BookingDetailResponse.from(
+                bookingService.createBooking(userId, request.getShowtimeId(), request.getSeatIds()))));
     }
 
     @GetMapping
-    public ResponseEntity<List<BookingSummaryResponse>> getAllByUserId(@AuthenticationPrincipal UUID userId) {
+    public ResponseEntity<BookingDataResponse<List<BookingSummaryResponse>>> getAllByUserId(
+            @AuthenticationPrincipal UUID userId
+    ) {
         List<BookingSummaryResponse> response = bookingService.getBookingsByUserId(userId).stream()
                 .map(BookingSummaryResponse::from)
                 .toList();
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(new BookingDataResponse<>(response));
     }
 
     @GetMapping("/{bookingId}")
-    public ResponseEntity<BookingDetailResponse> getByUserIdAndBookingId(
+    public ResponseEntity<BookingDataResponse<BookingDetailResponse>> getByUserIdAndBookingId(
             @PathVariable UUID bookingId,
             @AuthenticationPrincipal UUID userId
     ) {
-        return ResponseEntity.ok(BookingDetailResponse.from(
-                bookingService.getBookingByUserId(userId, bookingId)));
+        return ResponseEntity.ok(new BookingDataResponse<>(BookingDetailResponse.from(
+                bookingService.getBookingByUserId(userId, bookingId))));
     }
 
     @DeleteMapping("/{bookingId}")
