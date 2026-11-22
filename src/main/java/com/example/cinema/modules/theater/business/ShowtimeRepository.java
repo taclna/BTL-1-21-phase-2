@@ -13,6 +13,8 @@ public interface ShowtimeRepository {
 
     Optional<Showtime> findByIdForUpdate(UUID showtimeId);
 
+    Optional<Showtime> findByIdForShare(UUID showtimeId);
+
     /** Queries startsAt in the half-open interval [from, to), sorted ascending. */
     List<Showtime> findByMovieIdAndStartsAtBetween(UUID movieId, Instant from, Instant to);
 
