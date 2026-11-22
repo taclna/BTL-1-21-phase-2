@@ -19,6 +19,9 @@ class BookingEntity {
     @Id
     private UUID id;
 
+    @Column(name = "booking_code", nullable = false, length = 20)
+    private String bookingCode;
+
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
@@ -47,6 +50,7 @@ class BookingEntity {
 
     BookingEntity(
             UUID id,
+            String bookingCode,
             UUID userId,
             UUID showtimeId,
             BigDecimal totalAmount,
@@ -56,6 +60,7 @@ class BookingEntity {
             Instant cancelledAt
     ) {
         this.id = id;
+        this.bookingCode = bookingCode;
         this.userId = userId;
         this.showtimeId = showtimeId;
         this.totalAmount = totalAmount;
@@ -66,6 +71,7 @@ class BookingEntity {
     }
 
     UUID getId() { return id; }
+    String getBookingCode() { return bookingCode; }
     UUID getUserId() { return userId; }
     UUID getShowtimeId() { return showtimeId; }
     BigDecimal getTotalAmount() { return totalAmount; }

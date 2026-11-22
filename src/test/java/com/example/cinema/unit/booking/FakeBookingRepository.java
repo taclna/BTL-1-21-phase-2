@@ -1,6 +1,7 @@
 package com.example.cinema.unit.booking;
 
 import com.example.cinema.modules.booking.business.Booking;
+import com.example.cinema.modules.booking.business.BookingPage;
 import com.example.cinema.modules.booking.business.BookingRepository;
 import com.example.cinema.modules.booking.business.BookingStatus;
 import com.example.cinema.modules.booking.business.bookingSeat;
@@ -41,6 +42,11 @@ class FakeBookingRepository implements BookingRepository {
     }
 
     @Override
+    public Optional<Booking> findByIdForUpdate(UUID bookingId) {
+        return findById(bookingId);
+    }
+
+    @Override
     public Optional<Booking> findByIdAndUserId(UUID bookingId, UUID userId) {
         return findById(bookingId).filter(booking -> booking.getUserId().equals(userId));
     }
@@ -58,6 +64,36 @@ class FakeBookingRepository implements BookingRepository {
     }
 
     @Override
+    public BookingPage findAllByUserId(UUID userId, int page, int pageSize) {
+        java.util.List<Booking> items = bookingsById.values().stream()
+                .filter(booking -> booking.getUserId().equals(userId))
+                .sorted(java.util.Comparator.comparing(Booking::getCreatedAt).reversed())
+                .skip((long) (page - 1) * pageSize)
+                .limit(pageSize)
+                .toList();
+        long totalItems = bookingsById.values().stream()
+                .filter(booking -> booking.getUserId().equals(userId))
+                .count();
+        return new BookingPage(items, totalItems);
+    }
+
+    @Override
+    public BookingPage findAll(int page, int pageSize) {
+        java.util.List<Booking> items = bookingsById.values().stream()
+                .sorted(java.util.Comparator.comparing(Booking::getCreatedAt).reversed())
+                .skip((long) (page - 1) * pageSize)
+                .limit(pageSize)
+                .toList();
+        return new BookingPage(items, bookingsById.size());
+    }
+
+    @Override
+    public boolean existsByBookingCode(String bookingCode) {
+        return bookingsById.values().stream()
+                .anyMatch(booking -> Objects.equals(booking.getBookingCode(), bookingCode));
+    }
+
+    @Override
     public boolean existsByShowtimeIdAndSeatId(UUID showtimeId, UUID seatId) {
         return activeBookingBySeat.containsKey(new SeatKey(showtimeId, seatId));
     }
@@ -68,7 +104,7 @@ class FakeBookingRepository implements BookingRepository {
         if (booking != null) {
             removeActiveSeats(booking);
             bookingsById.put(bookingId, new Booking(
-                    booking.getBookingId(), booking.getUserId(), booking.getShowtimeId(), booking.getSeats(),
+                    booking.getBookingId(), booking.getBookingCode(), booking.getUserId(), booking.getShowtimeId(), booking.getSeats(),
                     booking.getTotalAmount(), booking.getCreatedAt(), booking.getPaymentStatus(),
                     BookingStatus.CANCELLED, cancelledAt));
         }

@@ -11,6 +11,7 @@ import java.util.UUID;
 public class BookingDetailResponse {
 
     private final UUID bookingId;
+    private final String bookingCode;
     private final UUID showtimeId;
     private final List<BookingSeatResponse> seats;
     private final BigDecimal totalAmount;
@@ -21,6 +22,7 @@ public class BookingDetailResponse {
 
     public BookingDetailResponse(
             UUID bookingId,
+            String bookingCode,
             UUID showtimeId,
             List<BookingSeatResponse> seats,
             BigDecimal totalAmount,
@@ -30,6 +32,7 @@ public class BookingDetailResponse {
             Instant cancelledAt
     ) {
         this.bookingId = bookingId;
+        this.bookingCode = bookingCode;
         this.showtimeId = showtimeId;
         this.seats = List.copyOf(seats);
         this.totalAmount = totalAmount;
@@ -41,13 +44,14 @@ public class BookingDetailResponse {
 
     public static BookingDetailResponse from(Booking booking) {
         return new BookingDetailResponse(
-                booking.getBookingId(), booking.getShowtimeId(),
+                booking.getBookingId(), booking.getBookingCode(), booking.getShowtimeId(),
                 booking.getSeats().stream().map(BookingSeatResponse::from).toList(),
                 booking.getTotalAmount(), booking.getPaymentStatus(), booking.getStatus(),
                 booking.getCreatedAt(), booking.getCancelledAt());
     }
 
     public UUID getBookingId() { return bookingId; }
+    public String getBookingCode() { return bookingCode; }
     public UUID getShowtimeId() { return showtimeId; }
     public List<BookingSeatResponse> getSeats() { return seats; }
     public BigDecimal getTotalAmount() { return totalAmount; }
