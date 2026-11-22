@@ -13,3 +13,13 @@ cinema:
   jwt:
     secret: test-only-jwt-secret-not-for-any-other-environment
     expiration-seconds: 3600
+
+management:
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: "health,prometheus"

@@ -45,6 +45,11 @@ class ShowtimeRepositoryAdapter implements ShowtimeRepository {
     }
 
     @Override
+    public Optional<Showtime> findByIdForShare(UUID showtimeId) {
+        return showtimeRepository.findByIdForShare(showtimeId).map(TheaterDataMapper::toBusiness);
+    }
+
+    @Override
     public List<Showtime> findByMovieIdAndStartsAtBetween(UUID movieId, Instant from, Instant to) {
         return showtimeRepository.findAllByMovieIdAndStartsAtGreaterThanEqualAndStartsAtLessThanOrderByStartsAtAsc(movieId, from, to).stream()
                 .map(TheaterDataMapper::toBusiness)

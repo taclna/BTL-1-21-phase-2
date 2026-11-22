@@ -14,15 +14,31 @@ const unexpected = new Counter('measured_unexpected');
 const readLatency = new Trend('measured_read_latency', true);
 const bookingLatency = new Trend('measured_booking_latency', true);
 
+export function uuidv4() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+    });
+}
+
 export function parse(response) {
     try { const value = response.json(); return value; } catch (_) { return null; }
 }
 export function data(response) { const value = parse(response); return value && (value.data === undefined ? value : value.data); }
-export function request(method, path, payload, token, expected = [200], kind = 'read', phaseOverride) {
+export function request(method, path, payload, token, expected = [200], kind = 'read', phaseOverride, extraHeaders = null) {
     const phase = phaseOverride || (exec.scenario.name === 'measure' ? 'measure' : 'warmup');
     const route = path.split('?')[0].replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/g, ':id');
+    const headers = Object.assign(
+        { 'Content-Type': 'application/json' },
+        token ? { Authorization: 'Bearer ' + token } : {},
+        extraHeaders || {}
+    );
+    if (method === 'POST' && path.startsWith('/api/v1/bookings') && !headers['Idempotency-Key']) {
+        headers['Idempotency-Key'] = uuidv4();
+    }
     const response = http.request(method, BASE + path, payload == null ? null : JSON.stringify(payload), {
-        headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}),
+        headers: headers,
         tags: { name: method + ' ' + route, phase: phase },
         responseCallback: http.expectedStatuses(...expected)
     });

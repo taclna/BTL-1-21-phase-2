@@ -6,6 +6,9 @@ import com.example.cinema.modules.theater.business.ShowtimeModuleApi.SeatKind;
 import com.example.cinema.modules.theater.business.ShowtimeModuleApi.SeatSnapshot;
 import com.example.cinema.modules.theater.business.ShowtimeModuleApi.ShowtimeSnapshot;
 import com.example.cinema.modules.theater.business.ShowtimeModuleApi.ShowtimeState;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -30,13 +33,23 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final ShowtimeModuleApi showtimeModuleApi;
     private final Clock clock;
+    private final Counter bookingCreatedCounter;
+    private final Counter bookingSeatConflictCounter;
 
     @Autowired
     public BookingService(
             BookingRepository bookingRepository,
+            ShowtimeModuleApi showtimeModuleApi,
+            MeterRegistry meterRegistry
+    ) {
+        this(bookingRepository, showtimeModuleApi, Clock.systemUTC(), meterRegistry);
+    }
+
+    public BookingService(
+            BookingRepository bookingRepository,
             ShowtimeModuleApi showtimeModuleApi
     ) {
-        this(bookingRepository, showtimeModuleApi, Clock.systemUTC());
+        this(bookingRepository, showtimeModuleApi, Clock.systemUTC(), new SimpleMeterRegistry());
     }
 
     public BookingService(
@@ -44,28 +57,46 @@ public class BookingService {
             ShowtimeModuleApi showtimeModuleApi,
             Clock clock
     ) {
+        this(bookingRepository, showtimeModuleApi, clock, new SimpleMeterRegistry());
+    }
+
+    public BookingService(
+            BookingRepository bookingRepository,
+            ShowtimeModuleApi showtimeModuleApi,
+            Clock clock,
+            MeterRegistry meterRegistry
+    ) {
         this.bookingRepository = bookingRepository;
         this.showtimeModuleApi = showtimeModuleApi;
         this.clock = clock;
+        this.bookingCreatedCounter = Counter.builder("booking.creation").register(meterRegistry);
+        this.bookingSeatConflictCounter = Counter.builder("booking.seat_conflict").register(meterRegistry);
     }
 
     @Transactional
     public Booking createBooking(UUID userId, UUID showtimeId, List<UUID> seatIds) {
-        validateBookingRequest(userId, showtimeId, seatIds);
+        try {
+            validateBookingRequest(userId, showtimeId, seatIds);
 
-        ShowtimeSnapshot showtime = showtimeModuleApi.lockShowtimeForBooking(showtimeId);
-        List<SeatSnapshot> seatSnapshots = showtimeModuleApi.getSeatSnapshots(seatIds);
+            ShowtimeSnapshot showtime = showtimeModuleApi.lockShowtimeForBooking(showtimeId);
+            List<SeatSnapshot> seatSnapshots = showtimeModuleApi.getSeatSnapshots(seatIds);
 
-        validateShowtime(showtime, showtimeId);
-        validateSeats(showtime, seatSnapshots, seatIds);
-        validateSeatAvailable(seatIds, showtimeId);
+            validateShowtime(showtime, showtimeId);
+            validateSeats(showtime, seatSnapshots, seatIds);
+            validateSeatAvailable(seatIds, showtimeId);
 
-        List<bookingSeat> bookingSeats = createBookingSeats(showtime, seatSnapshots);
-        BigDecimal totalAmount = getTotalAmount(bookingSeats);
+            List<bookingSeat> bookingSeats = createBookingSeats(showtime, seatSnapshots);
+            BigDecimal totalAmount = getTotalAmount(bookingSeats);
 
-        String bookingCode = generateAvailableBookingCode();
-        Booking booking = new Booking(UUID.randomUUID(), bookingCode, userId, showtimeId, bookingSeats, totalAmount);
-        return bookingRepository.save(booking);
+            String bookingCode = generateAvailableBookingCode();
+            Booking booking = new Booking(UUID.randomUUID(), bookingCode, userId, showtimeId, bookingSeats, totalAmount);
+            Booking savedBooking = bookingRepository.save(booking);
+            bookingCreatedCounter.increment();
+            return savedBooking;
+        } catch (SeatAlreadyBookedException exception) {
+            bookingSeatConflictCounter.increment();
+            throw exception;
+        }
     }
 
     private String generateAvailableBookingCode() {

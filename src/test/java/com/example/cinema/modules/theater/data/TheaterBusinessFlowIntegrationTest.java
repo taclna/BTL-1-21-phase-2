@@ -105,5 +105,10 @@ class TheaterBusinessFlowIntegrationTest {
                 com.example.cinema.modules.theater.business.ShowtimeModuleApi.SeatKind.STANDARD,
                 com.example.cinema.modules.theater.business.ShowtimeModuleApi.SeatKind.STANDARD,
                 com.example.cinema.modules.theater.business.ShowtimeModuleApi.SeatKind.VIP);
+
+        var sharedSnapshot = showtimeService.lockShowtimeShareForBooking(created.id());
+        assertThat(sharedSnapshot).isNotNull();
+        assertThat(sharedSnapshot.showtimeId()).isEqualTo(created.id());
+        assertThat(sharedSnapshot.status()).isEqualTo(ShowtimeState.SCHEDULED);
     }
 }

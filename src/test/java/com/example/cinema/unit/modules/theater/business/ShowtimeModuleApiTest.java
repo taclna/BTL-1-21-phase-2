@@ -85,6 +85,28 @@ class ShowtimeModuleApiTest {
         }
     }
 
+    @Test
+    void lockShowtimeShareForBookingDelegatesToRepositoryAndReturnsSnapshot() {
+        var showtimes = org.mockito.Mockito.mock(com.example.cinema.modules.theater.business.ShowtimeRepository.class);
+        var seats = org.mockito.Mockito.mock(com.example.cinema.modules.theater.business.SeatRepository.class);
+        var service = new com.example.cinema.modules.theater.business.ShowtimeService(showtimes,
+                org.mockito.Mockito.mock(com.example.cinema.modules.theater.business.AuditoriumRepository.class), seats,
+                org.mockito.Mockito.mock(com.example.cinema.modules.movie.business.MovieModuleApi.class), java.time.Clock.systemUTC());
+        UUID roomId = UUID.randomUUID();
+        UUID showtimeId = UUID.randomUUID();
+        Instant start = Instant.parse("2030-10-23T11:00:00Z");
+        org.mockito.Mockito.when(showtimes.findByIdForShare(showtimeId)).thenReturn(java.util.Optional.of(
+                new com.example.cinema.modules.theater.business.Showtime(showtimeId, UUID.randomUUID(), roomId,
+                        start, start.plusSeconds(8100), new BigDecimal("90000.00"),
+                        com.example.cinema.modules.theater.business.ShowtimeStatus.SCHEDULED, start, start)));
+        org.mockito.Mockito.when(seats.findByAuditoriumId(roomId)).thenReturn(List.of());
+
+        var snapshot = service.lockShowtimeShareForBooking(showtimeId);
+        assertThat(snapshot).isNotNull();
+        assertThat(snapshot.showtimeId()).isEqualTo(showtimeId);
+        assertThat(snapshot.status()).isEqualTo(ShowtimeState.SCHEDULED);
+    }
+
     private static ShowtimeSnapshot showtime(List<SeatSnapshot> seats) {
         return new ShowtimeSnapshot(
                 UUID.randomUUID(),

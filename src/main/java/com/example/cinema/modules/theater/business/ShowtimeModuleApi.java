@@ -26,6 +26,13 @@ public interface ShowtimeModuleApi {
     ShowtimeSnapshot lockShowtimeForBooking(UUID showtimeId);
 
     /**
+     * Locks the showtime with a shared lock (FOR SHARE) until the caller's transaction completes,
+     * then returns its current snapshot. Used in Phase 2 Plan B to allow concurrent bookings
+     * on the same showtime while still blocking conflicting showtime cancellations.
+     */
+    ShowtimeSnapshot lockShowtimeShareForBooking(UUID showtimeId);
+
+    /**
      * Returns the existing seats whose IDs were requested by Booking.
      * The returned list may be shorter than {@code seatIds} when an ID is unknown.
      */
