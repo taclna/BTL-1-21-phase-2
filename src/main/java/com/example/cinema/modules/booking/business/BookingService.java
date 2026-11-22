@@ -63,8 +63,19 @@ public class BookingService {
         List<bookingSeat> bookingSeats = createBookingSeats(showtime, seatSnapshots);
         BigDecimal totalAmount = getTotalAmount(bookingSeats);
 
-        Booking booking = new Booking(userId, showtimeId, bookingSeats, totalAmount);
+        String bookingCode = generateAvailableBookingCode();
+        Booking booking = new Booking(UUID.randomUUID(), bookingCode, userId, showtimeId, bookingSeats, totalAmount);
         return bookingRepository.save(booking);
+    }
+
+    private String generateAvailableBookingCode() {
+        for (int attempt = 0; attempt < 10; attempt++) {
+            String code = BookingCodeGenerator.generate();
+            if (!bookingRepository.existsByBookingCode(code)) {
+                return code;
+            }
+        }
+        throw new IllegalStateException("Could not generate a unique booking code");
     }
 
     private void validateSeatAvailable(List<UUID> seatIds, UUID showtimeId) {
@@ -105,12 +116,52 @@ public class BookingService {
         return bookingRepository.findAllByUserId(userId);
     }
 
+    public BookingPage getBookingsByUserId(UUID userId, int page, int pageSize) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId must not be null");
+        }
+        validatePage(page, pageSize);
+        return bookingRepository.findAllByUserId(userId, page, pageSize);
+    }
+
     public Booking getBookingByUserId(UUID userId, UUID bookingId) {
         if (userId == null || bookingId == null) {
             throw new IllegalArgumentException("userId and bookingId must not be null");
         }
         return bookingRepository.findByIdAndUserId(bookingId, userId)
                 .orElseThrow(() -> new BookingNotFoundException(bookingId));
+    }
+
+    public BookingPage getAllBookings(int page, int pageSize) {
+        validatePage(page, pageSize);
+        return bookingRepository.findAll(page, pageSize);
+    }
+
+    public Booking getBookingById(UUID bookingId) {
+        if (bookingId == null) {
+            throw new IllegalArgumentException("bookingId must not be null");
+        }
+        return bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new BookingNotFoundException(bookingId));
+    }
+
+    @Transactional
+    public void cancelBookingByAdmin(UUID bookingId) {
+        if (bookingId == null) {
+            throw new IllegalArgumentException("bookingId must not be null");
+        }
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> new BookingNotFoundException(bookingId));
+        if (booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw new BookingCannotBeCancelledException(bookingId);
+        }
+        ShowtimeSnapshot showtime = showtimeModuleApi.findShowtime(booking.getShowtimeId())
+                .orElseThrow(() -> new BookingCannotBeCancelledException(bookingId));
+        Instant now = clock.instant();
+        if (now.isAfter(showtime.startsAt().minus(Duration.ofMinutes(30)))) {
+            throw new BookingCannotBeCancelledException(bookingId);
+        }
+        bookingRepository.cancelById(bookingId, now);
     }
 
     @Transactional(readOnly = true)
@@ -211,6 +262,15 @@ public class BookingService {
             if (seatSnapshot.type() == null) {
                 throw new IllegalArgumentException("Seat type is missing");
             }
+        }
+    }
+
+    private void validatePage(int page, int pageSize) {
+        if (page < 1) {
+            throw new IllegalArgumentException("Page must be at least 1");
+        }
+        if (pageSize < 1 || pageSize > 100) {
+            throw new IllegalArgumentException("Page size must be between 1 and 100");
         }
     }
 

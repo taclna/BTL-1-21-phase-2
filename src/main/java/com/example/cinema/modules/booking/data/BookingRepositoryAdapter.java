@@ -9,6 +9,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -34,7 +37,7 @@ class BookingRepositoryAdapter implements BookingRepository {
     public Booking save(Booking booking) {
         try {
             bookingJpaRepository.save(new BookingEntity(
-                    booking.getBookingId(), booking.getUserId(), booking.getShowtimeId(),
+                    booking.getBookingId(), booking.getBookingCode(), booking.getUserId(), booking.getShowtimeId(),
                     booking.getTotalAmount(), booking.getCreatedAt(), booking.getPaymentStatus(),
                     booking.getStatus(), booking.getCancelledAt()));
 
@@ -59,6 +62,11 @@ class BookingRepositoryAdapter implements BookingRepository {
     }
 
     @Override
+    public Optional<Booking> findByIdForUpdate(UUID bookingId) {
+        return bookingJpaRepository.findForUpdateById(bookingId).map(this::toBooking);
+    }
+
+    @Override
     public Optional<Booking> findByIdAndUserId(UUID bookingId, UUID userId) {
         return bookingJpaRepository.findByIdAndUserId(bookingId, userId).map(this::toBooking);
     }
@@ -73,6 +81,34 @@ class BookingRepositoryAdapter implements BookingRepository {
         return bookingJpaRepository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
                 .map(this::toBooking)
                 .toList();
+    }
+
+    @Override
+    public com.example.cinema.modules.booking.business.BookingPage findAllByUserId(
+            UUID userId, int page, int pageSize
+    ) {
+        PageRequest request = PageRequest.of(page - 1, pageSize,
+                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
+        Page<BookingEntity> result =
+                bookingJpaRepository.findAllByUserId(userId, request);
+        return new com.example.cinema.modules.booking.business.BookingPage(
+                result.getContent().stream().map(this::toBooking).toList(),
+                result.getTotalElements());
+    }
+
+    @Override
+    public com.example.cinema.modules.booking.business.BookingPage findAll(int page, int pageSize) {
+        PageRequest request = PageRequest.of(page - 1, pageSize,
+                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
+        Page<BookingEntity> result = bookingJpaRepository.findAll(request);
+        return new com.example.cinema.modules.booking.business.BookingPage(
+                result.getContent().stream().map(this::toBooking).toList(),
+                result.getTotalElements());
+    }
+
+    @Override
+    public boolean existsByBookingCode(String bookingCode) {
+        return bookingJpaRepository.existsByBookingCode(bookingCode);
     }
 
     @Override
@@ -104,7 +140,7 @@ class BookingRepositoryAdapter implements BookingRepository {
         List<bookingSeat> seats = bookingSeatJpaRepository.findAllByBookingId(entity.getId()).stream()
                 .map(seat -> new bookingSeat(seat.getSeatId(), seat.getPrice()))
                 .toList();
-        return new Booking(entity.getId(), entity.getUserId(), entity.getShowtimeId(), seats,
+        return new Booking(entity.getId(), entity.getBookingCode(), entity.getUserId(), entity.getShowtimeId(), seats,
                 entity.getTotalAmount(), entity.getCreatedAt(), entity.getPaymentStatus(),
                 entity.getStatus(), entity.getCancelledAt());
     }

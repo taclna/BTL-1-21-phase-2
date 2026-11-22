@@ -8,6 +8,7 @@ import java.util.UUID;
 public class Booking {
 
     private final UUID bookingId;
+    private final String bookingCode;
     private final UUID userId;
     private final UUID showtimeId;
     private final List<bookingSeat> seats;
@@ -23,7 +24,7 @@ public class Booking {
             List<bookingSeat> seats,
             BigDecimal totalAmount
     ) {
-        this(UUID.randomUUID(), userId, showtimeId, seats, totalAmount, Instant.now(),
+        this(UUID.randomUUID(), BookingCodeGenerator.generate(), userId, showtimeId, seats, totalAmount, Instant.now(),
                 PaymentStatus.PENDING, BookingStatus.CONFIRMED, null);
     }
 
@@ -34,7 +35,19 @@ public class Booking {
             List<bookingSeat> seats,
             BigDecimal totalAmount
     ) {
-        this(bookingId, userId, showtimeId, seats, totalAmount, Instant.now(),
+        this(bookingId, null, userId, showtimeId, seats, totalAmount, Instant.now(),
+                PaymentStatus.PENDING, BookingStatus.CONFIRMED, null);
+    }
+
+    public Booking(
+            UUID bookingId,
+            String bookingCode,
+            UUID userId,
+            UUID showtimeId,
+            List<bookingSeat> seats,
+            BigDecimal totalAmount
+    ) {
+        this(bookingId, bookingCode, userId, showtimeId, seats, totalAmount, Instant.now(),
                 PaymentStatus.PENDING, BookingStatus.CONFIRMED, null);
     }
 
@@ -47,7 +60,21 @@ public class Booking {
             Instant createdAt,
             PaymentStatus paymentStatus
     ) {
-        this(bookingId, userId, showtimeId, seats, totalAmount, createdAt,
+        this(bookingId, null, userId, showtimeId, seats, totalAmount, createdAt,
+                paymentStatus, BookingStatus.CONFIRMED, null);
+    }
+
+    public Booking(
+            UUID bookingId,
+            String bookingCode,
+            UUID userId,
+            UUID showtimeId,
+            List<bookingSeat> seats,
+            BigDecimal totalAmount,
+            Instant createdAt,
+            PaymentStatus paymentStatus
+    ) {
+        this(bookingId, bookingCode, userId, showtimeId, seats, totalAmount, createdAt,
                 paymentStatus, BookingStatus.CONFIRMED, null);
     }
 
@@ -62,7 +89,24 @@ public class Booking {
             BookingStatus status,
             Instant cancelledAt
     ) {
+        this(bookingId, null, userId, showtimeId, seats, totalAmount, createdAt,
+                paymentStatus, status, cancelledAt);
+    }
+
+    public Booking(
+            UUID bookingId,
+            String bookingCode,
+            UUID userId,
+            UUID showtimeId,
+            List<bookingSeat> seats,
+            BigDecimal totalAmount,
+            Instant createdAt,
+            PaymentStatus paymentStatus,
+            BookingStatus status,
+            Instant cancelledAt
+    ) {
         this.bookingId = bookingId;
+        this.bookingCode = bookingCode;
         this.userId = userId;
         this.showtimeId = showtimeId;
         this.seats = List.copyOf(seats);
@@ -75,6 +119,10 @@ public class Booking {
 
     public UUID getBookingId() {
         return bookingId;
+    }
+
+    public String getBookingCode() {
+        return bookingCode;
     }
 
     public UUID getUserId() {
