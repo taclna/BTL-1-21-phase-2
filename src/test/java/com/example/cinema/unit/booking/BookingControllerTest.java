@@ -4,6 +4,7 @@ import com.example.cinema.modules.booking.api.BookingController;
 import com.example.cinema.modules.booking.api.CreateBookingRequest;
 import com.example.cinema.modules.booking.business.Booking;
 import com.example.cinema.modules.booking.business.BookingService;
+import com.example.cinema.modules.booking.business.BookingPage;
 import com.example.cinema.modules.booking.business.bookingSeat;
 import java.math.BigDecimal;
 import java.util.List;
@@ -55,9 +56,10 @@ class BookingControllerTest {
 
     @Test
     void listWrapsBookingsInDataEnvelope() {
-        when(bookingService.getBookingsByUserId(userId)).thenReturn(List.of(booking));
+        when(bookingService.getBookingsByUserId(userId, 1, 20))
+                .thenReturn(new BookingPage(List.of(booking), 1));
 
-        var response = controller.getAllByUserId(userId);
+        var response = controller.getAllByUserId(userId, 1, 20);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();

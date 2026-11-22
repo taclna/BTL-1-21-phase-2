@@ -127,6 +127,8 @@ class BookingApiIntegrationTest {
         assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(created.getBody()).isNotNull();
         UUID bookingId = UUID.fromString(created.getBody().path("data").path("bookingId").asText());
+        assertThat(created.getBody().path("data").path("bookingCode").asText())
+                .matches("[A-Z2-7]{10}");
         assertThat(created.getBody().path("data").path("status").asText()).isEqualTo("CONFIRMED");
 
         ResponseEntity<JsonNode> list = get("/api/v1/bookings", firstCustomer);
@@ -135,6 +137,9 @@ class BookingApiIntegrationTest {
         assertThat(list.getBody().path("data").isArray()).isTrue();
         assertThat(list.getBody().path("data").get(0).path("bookingId").asText())
                 .isEqualTo(bookingId.toString());
+        assertThat(list.getBody().path("meta").path("page").asInt()).isEqualTo(1);
+        assertThat(list.getBody().path("meta").path("pageSize").asInt()).isEqualTo(20);
+        assertThat(list.getBody().path("meta").path("totalItems").asLong()).isGreaterThanOrEqualTo(1);
 
         ResponseEntity<JsonNode> detail = get("/api/v1/bookings/" + bookingId, firstCustomer);
         assertThat(detail.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -197,12 +202,79 @@ class BookingApiIntegrationTest {
                 .isEqualTo("SHOWTIME_NOT_FOUND");
     }
 
+    @Test
+    void adminCanListAndViewEveryCustomersBooking() {
+        UUID adminId = insertAdmin();
+        ResponseEntity<JsonNode> created = createBooking(firstCustomer, seatId);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID bookingId = UUID.fromString(created.getBody().path("data").path("bookingId").asText());
+
+        ResponseEntity<JsonNode> denied = restTemplate.exchange(
+                "/api/v1/admin/bookings",
+                HttpMethod.GET,
+                new HttpEntity<>(bearerHeaders(firstCustomer)),
+                JsonNode.class);
+        assertThat(denied.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        ResponseEntity<JsonNode> list = restTemplate.exchange(
+                "/api/v1/admin/bookings?page=1&pageSize=20",
+                HttpMethod.GET,
+                new HttpEntity<>(bearerHeaders(adminId, User.Role.ADMIN)),
+                JsonNode.class);
+        assertThat(list.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(list.getBody().path("data").isArray()).isTrue();
+        assertThat(list.getBody().path("data").get(0).path("bookingId").asText())
+                .isEqualTo(bookingId.toString());
+        assertThat(list.getBody().path("meta").path("page").asInt()).isEqualTo(1);
+        assertThat(list.getBody().path("meta").path("pageSize").asInt()).isEqualTo(20);
+
+        ResponseEntity<JsonNode> detail = restTemplate.exchange(
+                "/api/v1/admin/bookings/" + bookingId,
+                HttpMethod.GET,
+                new HttpEntity<>(bearerHeaders(adminId, User.Role.ADMIN)),
+                JsonNode.class);
+        assertThat(detail.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(detail.getBody().path("data").path("bookingId").asText())
+                .isEqualTo(bookingId.toString());
+    }
+
+    @Test
+    void adminCanCancelAnotherCustomersBooking() {
+        UUID adminId = insertAdmin();
+        ResponseEntity<JsonNode> created = createBooking(firstCustomer, seatId);
+        UUID bookingId = UUID.fromString(created.getBody().path("data").path("bookingId").asText());
+
+        ResponseEntity<Void> cancelled = restTemplate.exchange(
+                "/api/v1/admin/bookings/" + bookingId,
+                HttpMethod.DELETE,
+                new HttpEntity<>(bearerHeaders(adminId, User.Role.ADMIN)),
+                Void.class);
+        assertThat(cancelled.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+        ResponseEntity<JsonNode> detail = restTemplate.exchange(
+                "/api/v1/admin/bookings/" + bookingId,
+                HttpMethod.GET,
+                new HttpEntity<>(bearerHeaders(adminId, User.Role.ADMIN)),
+                JsonNode.class);
+        assertThat(detail.getBody().path("data").path("status").asText())
+                .isEqualTo("CANCELLED");
+    }
+
     private UUID insertCustomer() {
         UUID userId = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO users (id,username,password_hash,role,created_at,updated_at)
                 VALUES (?, ?, 'test-hash', 'CUSTOMER', now(), now())
                 """, userId, "booking-api-" + userId);
+        return userId;
+    }
+
+    private UUID insertAdmin() {
+        UUID userId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO users (id,username,password_hash,role,created_at,updated_at)
+                VALUES (?, ?, 'test-hash', 'ADMIN', now(), now())
+                """, userId, "booking-admin-" + userId);
         return userId;
     }
 
@@ -243,9 +315,13 @@ class BookingApiIntegrationTest {
     }
 
     private HttpHeaders bearerHeaders(UUID customerId) {
+        return bearerHeaders(customerId, User.Role.CUSTOMER);
+    }
+
+    private HttpHeaders bearerHeaders(UUID userId, User.Role role) {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(jwtTokenService.issue(
-                new AuthenticatedUser(customerId, User.Role.CUSTOMER)));
+                new AuthenticatedUser(userId, role)));
         return headers;
     }
 
