@@ -70,4 +70,30 @@ Ghi cùng commit, dataset, CPU/vCPU/quota, RAM, Java, PostgreSQL, k6, JVM flags,
 
 Trên Windows, dùng `run-baseline.ps1` với PID tiến trình Java. Nếu PostgreSQL chạy trong Docker, thêm `-DockerContainerNames btl-ktpm-db-1` để ghi `docker stats` theo giây vào CSV riêng. Khi chạy k6 thủ công, thêm `--include-system-env-vars` để script nhận fixture, URL và mức VU từ shell.
 
+### Theo dõi PostgreSQL và Prometheus trên Kaggle
+
+Runner Python mặc định lấy thêm ba nhóm bằng chứng trong mỗi lượt chạy:
+
+- `*-postgres.csv`: mỗi giây ghi số backend chờ lock, số connection active và `idle in transaction` từ `pg_stat_activity`.
+- `*-deadlocks.json`: bộ đếm `pg_stat_database.deadlocks` trước/sau và chênh lệch của lượt chạy.
+- `*-prometheus.txt`: raw snapshot của `/actuator/prometheus` mỗi 5 giây.
+
+Runner gọi CLI `psql`; trên Kaggle CLI này đã được cài cùng PostgreSQL. Cấu hình kết nối bằng biến chuẩn của PostgreSQL. Có thể dùng trực tiếp các biến `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` của ứng dụng; runner tự đọc JDBC URL, hoặc khai báo rõ:
+
+~~~bash
+export PGHOST=127.0.0.1
+export PGPORT=5432
+export PGDATABASE=cinema_load
+export PGUSER=cinema_load
+export PGPASSWORD='mat-khau-local'
+export PROMETHEUS_URL=http://127.0.0.1:8080/actuator/prometheus
+
+python load-test/run-baseline.py --scenario booking \
+  --api-pid "$API_PID" --database-pid "$DATABASE_PID"
+~~~
+
+Password không được ghi vào `environment.json`. Có thể đổi chu kỳ bằng `--postgres-interval`, `--prometheus-interval` và timeout bằng `--monitor-timeout`. Chỉ dùng `--skip-postgres` hoặc `--skip-prometheus` cho lượt chẩn đoán không dùng làm evidence chính thức.
+
+Các file monitor có timestamp UTC. Khi tổng hợp, đối chiếu timestamp với raw k6 có tag `phase=measure`; runner không tự suy đoán ranh giới pha vì `setup()` của từng kịch bản có thời lượng khác nhau.
+
 Điền [mẫu báo cáo](../docs/phase-1/bao-cao-hieu-nang-mau.md) sau ba lượt mỗi mức. Báo p50/p95/p99, throughput, lỗi kỹ thuật, lỗi nghiệp vụ và tài nguyên; với contention ghi số winner, conflict đúng mã và xác nhận DB không có ghế bị giữ trùng. Chưa chạy thì để là chưa đo.
