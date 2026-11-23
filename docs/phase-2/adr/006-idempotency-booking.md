@@ -165,11 +165,12 @@ Không dùng `userId`, `bookingId` hoặc idempotency key làm metric label vì 
 
 ## Trạng thái triển khai
 
-ADR này mới là đề xuất, chưa được triển khai trong code hiện tại.
+E7 đã được triển khai trên nhánh `feature/phase2-idempotency` với migration V11, claim key bằng PostgreSQL upsert, payload hash, HTTP contract, error envelope và metrics.
 
 Quyết định 20/11/2026: triển khai **trong Pha 2** dưới dạng thí nghiệm E7, không nằm trong Bước 0.
 
 - Từ GĐ1, mọi script k6 gửi `Idempotency-Key` cho mỗi `POST /bookings`. Phiên bản chưa có ADR này bỏ qua header, nên A, B, C của E1 vẫn chạy cùng contract.
-- Code nằm trên tag riêng `phase-2-idempotency`, tách từ `phase-1-baseline`. Người 1 làm, Người 4 review.
+- Sau khi đủ 10 test chấp nhận, code sẽ được gắn tag riêng `phase-2-idempotency`, tách từ `phase-1-baseline`. Người 1 làm, Người 4 review.
+- Test tự động 1, 2, 4–10 và concurrency dùng chung PostgreSQL đã pass. `load-test/idempotency.js` đã sẵn sàng chạy test 3 qua nginx/hai API instance; lượt chạy hạ tầng thực tế chưa được ghi nhận.
 - Đo overhead bằng cách so tag này với `phase-1-baseline` trong cùng phiên Kaggle (xem [kế hoạch mục 11](../ke-hoach.md#11-e7-idempotency-cho-tạo-booking)).
 - Chuyển sang Accepted khi 10 test chấp nhận pass; khi đó ghép vào `phase-2-final`.

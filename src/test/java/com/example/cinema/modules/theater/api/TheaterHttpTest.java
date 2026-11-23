@@ -1,6 +1,7 @@
 package com.example.cinema.modules.theater.api;
 
 import com.example.cinema.modules.booking.business.BookingRepository;
+import com.example.cinema.modules.booking.business.BookingIdempotencyRepository;
 import com.example.cinema.modules.identity.business.UserRepository;
 import com.example.cinema.modules.movie.business.MovieModuleApi;
 import com.example.cinema.modules.theater.business.*;
@@ -51,6 +52,7 @@ class TheaterHttpTest {
     @MockitoBean(name = "seatRepositoryAdapter") SeatRepository seats;
     @MockitoBean(name = "showtimeRepositoryAdapter") ShowtimeRepository showtimes;
     @MockitoBean(name = "bookingRepositoryAdapter") BookingRepository bookings;
+    @MockitoBean(name = "bookingIdempotencyRepositoryAdapter") BookingIdempotencyRepository idempotency;
     @MockitoBean MovieModuleApi movies;
 
     @TestConfiguration

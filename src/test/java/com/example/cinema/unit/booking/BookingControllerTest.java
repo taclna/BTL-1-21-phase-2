@@ -3,6 +3,7 @@ package com.example.cinema.unit.booking;
 import com.example.cinema.modules.booking.api.BookingController;
 import com.example.cinema.modules.booking.api.CreateBookingRequest;
 import com.example.cinema.modules.booking.business.Booking;
+import com.example.cinema.modules.booking.business.BookingCreationResult;
 import com.example.cinema.modules.booking.business.BookingService;
 import com.example.cinema.modules.booking.business.BookingPage;
 import com.example.cinema.modules.booking.business.bookingSeat;
@@ -34,11 +35,30 @@ class BookingControllerTest {
         CreateBookingRequest request = new CreateBookingRequest();
         request.setShowtimeId(showtimeId);
         request.setSeatIds(List.of(seatId));
-        when(bookingService.createBooking(userId, showtimeId, List.of(seatId))).thenReturn(booking);
+        String key = UUID.randomUUID().toString();
+        when(bookingService.createBooking(userId, key, showtimeId, List.of(seatId)))
+                .thenReturn(BookingCreationResult.created(booking));
 
-        var response = controller.create(request, userId);
+        var response = controller.create(request, key, userId);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().data().getBookingId()).isEqualTo(booking.getBookingId());
+    }
+
+    @Test
+    void replayReturnsOkAndReplayHeader() {
+        CreateBookingRequest request = new CreateBookingRequest();
+        request.setShowtimeId(showtimeId);
+        request.setSeatIds(List.of(seatId));
+        String key = UUID.randomUUID().toString();
+        when(bookingService.createBooking(userId, key, showtimeId, List.of(seatId)))
+                .thenReturn(BookingCreationResult.replayed(booking));
+
+        var response = controller.create(request, key, userId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getHeaders().getFirst("Idempotency-Replayed")).isEqualTo("true");
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().data().getBookingId()).isEqualTo(booking.getBookingId());
     }

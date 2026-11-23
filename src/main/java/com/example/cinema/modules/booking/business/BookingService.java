@@ -16,11 +16,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
@@ -31,53 +36,85 @@ public class BookingService {
     private static final BigDecimal VIP_MULTIPLIER = new BigDecimal("1.20");
 
     private final BookingRepository bookingRepository;
+    private final BookingIdempotencyRepository idempotencyRepository;
     private final ShowtimeModuleApi showtimeModuleApi;
     private final Clock clock;
     private final Counter bookingCreatedCounter;
     private final Counter bookingSeatConflictCounter;
+    private final Counter idempotencyCreatedCounter;
+    private final Counter idempotencyReplayedCounter;
+    private final Counter idempotencyReusedCounter;
 
     @Autowired
     public BookingService(
             BookingRepository bookingRepository,
+            BookingIdempotencyRepository idempotencyRepository,
             ShowtimeModuleApi showtimeModuleApi,
             MeterRegistry meterRegistry
     ) {
-        this(bookingRepository, showtimeModuleApi, Clock.systemUTC(), meterRegistry);
+        this(bookingRepository, idempotencyRepository, showtimeModuleApi, Clock.systemUTC(), meterRegistry);
     }
 
     public BookingService(
             BookingRepository bookingRepository,
-            ShowtimeModuleApi showtimeModuleApi
-    ) {
-        this(bookingRepository, showtimeModuleApi, Clock.systemUTC(), new SimpleMeterRegistry());
-    }
-
-    public BookingService(
-            BookingRepository bookingRepository,
+            BookingIdempotencyRepository idempotencyRepository,
             ShowtimeModuleApi showtimeModuleApi,
             Clock clock
     ) {
-        this(bookingRepository, showtimeModuleApi, clock, new SimpleMeterRegistry());
+        this(bookingRepository, idempotencyRepository, showtimeModuleApi, clock, new SimpleMeterRegistry());
     }
 
     public BookingService(
             BookingRepository bookingRepository,
+            BookingIdempotencyRepository idempotencyRepository,
             ShowtimeModuleApi showtimeModuleApi,
             Clock clock,
             MeterRegistry meterRegistry
     ) {
         this.bookingRepository = bookingRepository;
+        this.idempotencyRepository = idempotencyRepository;
         this.showtimeModuleApi = showtimeModuleApi;
         this.clock = clock;
         this.bookingCreatedCounter = Counter.builder("booking.creation").register(meterRegistry);
         this.bookingSeatConflictCounter = Counter.builder("booking.seat_conflict").register(meterRegistry);
+        this.idempotencyCreatedCounter = Counter.builder("booking.idempotency.created").register(meterRegistry);
+        this.idempotencyReplayedCounter = Counter.builder("booking.idempotency.replayed").register(meterRegistry);
+        this.idempotencyReusedCounter = Counter.builder("booking.idempotency.reused").register(meterRegistry);
     }
 
     @Transactional
     public Booking createBooking(UUID userId, UUID showtimeId, List<UUID> seatIds) {
-        try {
-            validateBookingRequest(userId, showtimeId, seatIds);
+        return createBooking(userId, UUID.randomUUID().toString(), showtimeId, seatIds).booking();
+    }
 
+    @Transactional
+    public BookingCreationResult createBooking(
+            UUID userId,
+            String rawIdempotencyKey,
+            UUID showtimeId,
+            List<UUID> seatIds
+    ) {
+        UUID idempotencyKey = parseIdempotencyKey(rawIdempotencyKey);
+        validateBookingRequest(userId, showtimeId, seatIds);
+        String requestHash = hashRequest(showtimeId, seatIds);
+
+        if (!idempotencyRepository.claim(userId, idempotencyKey, requestHash)) {
+            BookingIdempotency existing = idempotencyRepository.find(userId, idempotencyKey)
+                    .orElseThrow(() -> new IllegalStateException("Claimed idempotency key disappeared"));
+            if (!requestHash.equals(existing.requestHash())) {
+                idempotencyReusedCounter.increment();
+                throw new IdempotencyKeyReusedException();
+            }
+            if (existing.bookingId() == null) {
+                throw new IllegalStateException("Committed idempotency record has no booking");
+            }
+            Booking booking = bookingRepository.findByIdAndUserId(existing.bookingId(), userId)
+                    .orElseThrow(() -> new IllegalStateException("Idempotency booking disappeared"));
+            idempotencyReplayedCounter.increment();
+            return BookingCreationResult.replayed(booking);
+        }
+
+        try {
             ShowtimeSnapshot showtime = showtimeModuleApi.lockShowtimeForBooking(showtimeId);
             List<SeatSnapshot> seatSnapshots = showtimeModuleApi.getSeatSnapshots(seatIds);
 
@@ -91,11 +128,49 @@ public class BookingService {
             String bookingCode = generateAvailableBookingCode();
             Booking booking = new Booking(UUID.randomUUID(), bookingCode, userId, showtimeId, bookingSeats, totalAmount);
             Booking savedBooking = bookingRepository.save(booking);
+            idempotencyRepository.attachBooking(
+                    userId,
+                    idempotencyKey,
+                    requestHash,
+                    savedBooking.getBookingId()
+            );
             bookingCreatedCounter.increment();
-            return savedBooking;
+            idempotencyCreatedCounter.increment();
+            return BookingCreationResult.created(savedBooking);
         } catch (SeatAlreadyBookedException exception) {
             bookingSeatConflictCounter.increment();
             throw exception;
+        }
+    }
+
+    private UUID parseIdempotencyKey(String rawIdempotencyKey) {
+        if (rawIdempotencyKey == null || rawIdempotencyKey.isBlank()) {
+            throw new InvalidIdempotencyKeyException();
+        }
+        try {
+            UUID parsed = UUID.fromString(rawIdempotencyKey);
+            if (!parsed.toString().equalsIgnoreCase(rawIdempotencyKey)) {
+                throw new InvalidIdempotencyKeyException();
+            }
+            return parsed;
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidIdempotencyKeyException();
+        }
+    }
+
+    private String hashRequest(UUID showtimeId, List<UUID> seatIds) {
+        String sortedSeats = seatIds.stream()
+                .sorted(Comparator.comparing(UUID::toString))
+                .map(UUID::toString)
+                .reduce((left, right) -> left + "," + right)
+                .orElse("");
+        String canonicalRequest = "v1\nshowtimeId=" + showtimeId + "\nseatIds=" + sortedSeats;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(canonicalRequest.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
         }
     }
 

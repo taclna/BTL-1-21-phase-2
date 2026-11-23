@@ -43,6 +43,18 @@ Booking hiện trả các booking của user đã đăng nhập tại `GET /api/
 k6 run --include-system-env-vars load-test/booking.js
 ~~~
 
+## E7 idempotency
+
+`idempotency.js` cho nhiều VU gửi đồng thời cùng user, key và payload. Kỳ vọng đúng một response `201 Created`; các response còn lại phải là `200 OK`, có `Idempotency-Replayed: true` và đều chứa `bookingId`. Teardown hủy booking vừa tạo.
+
+Khi kiểm tra nhiều API instance, đặt `BASE_URL` tới nginx/load balancer. Có thể truyền một UUID cố định qua `IDEMPOTENCY_KEY` để đối chiếu bản ghi PostgreSQL sau lượt chạy:
+
+~~~bash
+export VUS=10
+export IDEMPOTENCY_KEY=550e8400-e29b-41d4-a716-446655440000
+k6 run --include-system-env-vars load-test/idempotency.js
+~~~
+
 ## Tranh ghế
 
 Mỗi lượt dùng nhiều user tranh đúng một ghế: kỳ vọng một 201 và N−1 lỗi 409 có mã `SEAT_ALREADY_BOOKED`. Dùng `CONTENTION_RUN_INDEX` khác nhau từ 1 tới 9 để mỗi lượt có ghế mới. Giữ booking thắng lại để đối chiếu PostgreSQL bằng `verify-contention.sql`; sau khi đã lưu bằng chứng mới dọn dữ liệu lượt thử.

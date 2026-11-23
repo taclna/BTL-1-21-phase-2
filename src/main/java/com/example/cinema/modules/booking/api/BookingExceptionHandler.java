@@ -2,6 +2,8 @@ package com.example.cinema.modules.booking.api;
 
 import com.example.cinema.modules.booking.business.BookingNotFoundException;
 import com.example.cinema.modules.booking.business.BookingCannotBeCancelledException;
+import com.example.cinema.modules.booking.business.IdempotencyKeyReusedException;
+import com.example.cinema.modules.booking.business.InvalidIdempotencyKeyException;
 import com.example.cinema.modules.booking.business.SeatAlreadyBookedException;
 import com.example.cinema.shared.api.ErrorResponse;
 import com.example.cinema.shared.api.RequestIdFilter;
@@ -13,6 +15,18 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(basePackageClasses = BookingController.class)
 public class BookingExceptionHandler {
+
+    @ExceptionHandler(InvalidIdempotencyKeyException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidIdempotencyKey(HttpServletRequest request) {
+        return error(request, HttpStatus.BAD_REQUEST,
+                "INVALID_IDEMPOTENCY_KEY", "Idempotency-Key must be a valid UUID");
+    }
+
+    @ExceptionHandler(IdempotencyKeyReusedException.class)
+    public ResponseEntity<ErrorResponse> handleIdempotencyKeyReused(HttpServletRequest request) {
+        return error(request, HttpStatus.CONFLICT,
+                "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different payload");
+    }
 
     @ExceptionHandler(SeatAlreadyBookedException.class)
     public ResponseEntity<ErrorResponse> handleSeatAlreadyBooked(HttpServletRequest request) {

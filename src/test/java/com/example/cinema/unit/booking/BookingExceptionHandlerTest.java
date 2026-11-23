@@ -3,6 +3,8 @@ package com.example.cinema.unit.booking;
 import com.example.cinema.modules.booking.api.BookingExceptionHandler;
 import com.example.cinema.modules.booking.business.BookingCannotBeCancelledException;
 import com.example.cinema.modules.booking.business.BookingNotFoundException;
+import com.example.cinema.modules.booking.business.IdempotencyKeyReusedException;
+import com.example.cinema.modules.booking.business.InvalidIdempotencyKeyException;
 import com.example.cinema.modules.booking.business.SeatAlreadyBookedException;
 import com.example.cinema.shared.api.RequestIdFilter;
 import java.util.UUID;
@@ -27,6 +29,24 @@ class BookingExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().error().code()).isEqualTo("BOOKING_CANNOT_BE_CANCELLED");
+    }
+
+    @Test
+    void invalidIdempotencyKeyUsesDocumentedBadRequestCode() {
+        var response = handler.handleInvalidIdempotencyKey(new MockHttpServletRequest());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().error().code()).isEqualTo("INVALID_IDEMPOTENCY_KEY");
+    }
+
+    @Test
+    void reusedIdempotencyKeyUsesDocumentedConflictCode() {
+        var response = handler.handleIdempotencyKeyReused(new MockHttpServletRequest());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().error().code()).isEqualTo("IDEMPOTENCY_KEY_REUSED");
     }
 
     @Test

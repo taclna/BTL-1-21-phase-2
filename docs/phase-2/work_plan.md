@@ -83,7 +83,7 @@ Nếu không đạt: phần còn thiếu nhỏ (ví dụ test) cho thêm tối �
 - [ ] Tag `phase-2-query` pass `mvn verify`, có test đếm số query
 - [ ] Nhánh B pass `mvn verify`, gồm test đặt vé đồng thời với hủy suất
 - [ ] Notebook chạy được nhiều tag trong một phiên
-- [ ] Nhánh E7 pass test chấp nhận 1, 2, 4–10 của ADR-006
+- [x] Nhánh E7 pass test chấp nhận 1, 2, 4–10 của ADR-006
 
 Nếu không đạt: họp đánh giá lại khối lượng GĐ3. Nếu chưa có bản đồ nút thắt thì GĐ3 vẫn làm, nhưng giới hạn của E3 và các mức tải phải chốt muộn nhất thứ Tư 2/12.
 

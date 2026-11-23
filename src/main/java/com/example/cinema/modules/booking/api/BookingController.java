@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,10 +32,22 @@ public class BookingController {
     @PostMapping
     public ResponseEntity<BookingDataResponse<BookingDetailResponse>> create(
             @RequestBody CreateBookingRequest request,
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal UUID userId
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(new BookingDataResponse<>(BookingDetailResponse.from(
-                bookingService.createBooking(userId, request.getShowtimeId(), request.getSeatIds()))));
+        var result = bookingService.createBooking(
+                userId,
+                idempotencyKey,
+                request.getShowtimeId(),
+                request.getSeatIds()
+        );
+        var response = new BookingDataResponse<>(BookingDetailResponse.from(result.booking()));
+        if (result.replayed()) {
+            return ResponseEntity.ok()
+                    .header("Idempotency-Replayed", "true")
+                    .body(response);
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping

@@ -16,11 +16,12 @@ const saved={movieIds:[id(1)],showtimeId:id(2),showtimeDate:'2026-10-29',content
     contentionSeatIds:Array.from({length:9},(_,index)=>id(4+index)),loadUsers,contenders};
 let mode='normal',sequence=1000,wrongOwner=0,created=0,movieCreated=0;
 const bookings=new Map();
+const idempotency=new Map();
 const movies=new Map([[id(1),{id:id(1),title:'Fixture movie',durationMinutes:120,posterUrl:null}]]);
 const server=http.createServer(async(req,res)=>{
     const url=new URL(req.url,'http://localhost');
     const token=(req.headers.authorization || '').replace('Bearer ','');
-    const reply=(status,body)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(body===undefined?undefined:JSON.stringify(body));};
+    const reply=(status,body,headers={})=>{res.writeHead(status,{'Content-Type':'application/json',...headers});res.end(body===undefined?undefined:JSON.stringify(body));};
     if(req.method==='GET' && url.pathname==='/api/v1/users/me') {
         const user=[...loadUsers,...contenders].find(value=>value.token===token);
         return reply(user?200:401,{data:user?{id:user.userId,role:'CUSTOMER'}:null});
@@ -55,12 +56,20 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='POST' && url.pathname==='/api/v1/bookings') {
         let raw='';for await(const chunk of req) raw+=chunk;
         const body=JSON.parse(raw);
+        const key=req.headers['idempotency-key'];
+        const keyScope=token+'|'+key;
+        const requestHash=body.showtimeId+'|'+[...body.seatIds].sort().join(',');
+        const prior=idempotency.get(keyScope);
+        if(prior) {
+            if(prior.requestHash!==requestHash) return reply(409,{error:{code:'IDEMPOTENCY_KEY_REUSED'}});
+            return reply(200,{data:bookings.get(prior.bookingId)},{'Idempotency-Replayed':'true'});
+        }
         const existing=[...bookings.values()].find(value=>value.showtimeId===body.showtimeId &&
             value.seatId===body.seatIds[0] && value.status==='CONFIRMED');
         if(existing && mode!=='all-win') return reply(409,{error:{code:mode==='wrong-code'?'DATA_CONFLICT':'SEAT_ALREADY_BOOKED'}});
         const bookingId=id(sequence++);
         const booking={bookingId,token,showtimeId:body.showtimeId,seatId:body.seatIds[0],status:'CONFIRMED'};
-        bookings.set(bookingId,booking);created++;return reply(201,{data:booking});
+        bookings.set(bookingId,booking);idempotency.set(keyScope,{requestHash,bookingId});created++;return reply(201,{data:booking});
     }
     if(req.method==='DELETE' && url.pathname.startsWith('/api/v1/bookings/')) {
         const booking=bookings.get(url.pathname.split('/').pop());
@@ -92,12 +101,16 @@ try {
     assert.equal(wrongOwner,0,'warmup state must not cancel another measurement user booking');
     assert(created>0,'normal script must actually create bookings');
     assert([...bookings.values()].every(value=>value.status==='CANCELLED'),'normal run must cleanup all fixture bookings');
+    bookings.clear();idempotency.clear();mode='normal';
+    await run('idempotency','idempotency',0);
+    assert.equal(bookings.size,1,'idempotency run must create exactly one booking');
+    assert([...bookings.values()].every(value=>value.status==='CANCELLED'),'idempotency teardown must cancel its booking');
     for(const scenario of ['normal','all-win','wrong-code']) {
-        bookings.clear();mode=scenario;
+        bookings.clear();idempotency.clear();mode=scenario;
         await run('contention-'+scenario,'contention',scenario==='normal'?0:99);
     }
     fs.writeFileSync('load-test/results/client-check.json',JSON.stringify({kind:'HTTP stub, not Booking/DB integration',results},null,2));
-    console.log('Six k6 client scenarios passed, including rejection of multiple winners and wrong conflict codes.');
+    console.log('Seven k6 client scenarios passed, including idempotency replay and contention rejection.');
 } finally {
     server.close();fs.unlinkSync(fixtureFile);fs.rmdirSync(temp);
 }

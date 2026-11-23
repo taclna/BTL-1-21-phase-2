@@ -2,6 +2,8 @@ package com.example.cinema.unit.booking;
 
 import com.example.cinema.modules.booking.business.Booking;
 import com.example.cinema.modules.booking.business.BookingCannotBeCancelledException;
+import com.example.cinema.modules.booking.business.IdempotencyKeyReusedException;
+import com.example.cinema.modules.booking.business.InvalidIdempotencyKeyException;
 import com.example.cinema.modules.booking.business.BookingNotFoundException;
 import com.example.cinema.modules.booking.business.BookingService;
 import com.example.cinema.modules.booking.business.BookingStatus;
@@ -36,12 +38,14 @@ class BookingServiceTest {
     private final UUID vipSeatId = UUID.randomUUID();
 
     private FakeBookingRepository bookingRepository;
+    private FakeBookingIdempotencyRepository idempotencyRepository;
     private FakeShowtimeModuleApi theaterApi;
     private BookingService bookingService;
 
     @BeforeEach
     void setUp() {
         bookingRepository = new FakeBookingRepository();
+        idempotencyRepository = new FakeBookingIdempotencyRepository();
         theaterApi = new FakeShowtimeModuleApi();
         theaterApi.setShowtimeSnapshot(new ShowtimeSnapshot(
                 showtimeId,
@@ -57,6 +61,7 @@ class BookingServiceTest {
         ));
         bookingService = new BookingService(
                 bookingRepository,
+                idempotencyRepository,
                 theaterApi,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
@@ -77,6 +82,68 @@ class BookingServiceTest {
         assertEquals(new BigDecimal("100000.00"), booking.getSeats().get(0).getPrice());
         assertEquals(new BigDecimal("120000.00"), booking.getSeats().get(1).getPrice());
         assertEquals(new BigDecimal("220000.00"), booking.getTotalAmount());
+        assertEquals(1, bookingRepository.getBookingCount());
+    }
+
+    @Test
+    void replaysTheSameBookingForTheSameKeyAndPayload() {
+        String key = UUID.randomUUID().toString();
+
+        var created = bookingService.createBooking(
+                userId, key, showtimeId, List.of(standardSeatId, vipSeatId));
+        var replayed = bookingService.createBooking(
+                userId, key, showtimeId, List.of(vipSeatId, standardSeatId));
+
+        assertEquals(false, created.replayed());
+        assertEquals(true, replayed.replayed());
+        assertEquals(created.booking().getBookingId(), replayed.booking().getBookingId());
+        assertEquals(1, bookingRepository.getBookingCount());
+    }
+
+    @Test
+    void rejectsReusingAKeyWithADifferentPayload() {
+        String key = UUID.randomUUID().toString();
+        bookingService.createBooking(userId, key, showtimeId, List.of(standardSeatId));
+
+        assertThrows(IdempotencyKeyReusedException.class,
+                () -> bookingService.createBooking(userId, key, showtimeId, List.of(vipSeatId)));
+        assertEquals(1, bookingRepository.getBookingCount());
+    }
+
+    @Test
+    void scopesIdempotencyKeysByUser() {
+        String key = UUID.randomUUID().toString();
+        var first = bookingService.createBooking(
+                userId, key, showtimeId, List.of(standardSeatId));
+        var second = bookingService.createBooking(
+                UUID.randomUUID(), key, showtimeId, List.of(vipSeatId));
+
+        assertEquals(false, first.replayed());
+        assertEquals(false, second.replayed());
+        assertEquals(2, bookingRepository.getBookingCount());
+    }
+
+    @Test
+    void rejectsMissingOrMalformedIdempotencyKeys() {
+        assertThrows(InvalidIdempotencyKeyException.class,
+                () -> bookingService.createBooking(userId, null, showtimeId, List.of(standardSeatId)));
+        assertThrows(InvalidIdempotencyKeyException.class,
+                () -> bookingService.createBooking(userId, "not-a-uuid", showtimeId, List.of(standardSeatId)));
+        assertEquals(0, bookingRepository.getBookingCount());
+    }
+
+    @Test
+    void replayReturnsTheCurrentCancelledBooking() {
+        String key = UUID.randomUUID().toString();
+        var created = bookingService.createBooking(
+                userId, key, showtimeId, List.of(standardSeatId));
+        bookingService.cancelBooking(userId, created.booking().getBookingId());
+
+        var replayed = bookingService.createBooking(
+                userId, key, showtimeId, List.of(standardSeatId));
+
+        assertEquals(true, replayed.replayed());
+        assertEquals(BookingStatus.CANCELLED, replayed.booking().getStatus());
         assertEquals(1, bookingRepository.getBookingCount());
     }
 
