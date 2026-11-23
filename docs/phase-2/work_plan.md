@@ -59,11 +59,11 @@ Chi tiết kỹ thuật của từng dòng 0.x ở [E1 mục 3](e1-tranh-ghe.md#
 
 **CP1 (thứ Ba 24/11): Baseline**
 
-- [ ] Toàn bộ 0.1–0.11 đã merge vào `main`
-- [ ] `mvn verify` pass, gồm test cùng ghế, hủy rồi đặt lại, hủy sát giờ, phân quyền Admin
-- [ ] S1 `contention.js` chạy ở local: đúng 1 thắng, N−1 lỗi 409 `SEAT_ALREADY_BOOKED`; `verify-contention.sql` trả `active_claims = 1`, `duplicate_groups = 0`
-- [ ] S3 `booking.js` chạy hết một lượt ngắn ở local, không có lỗi ngoài dự kiến
-- [ ] Người 1 gắn tag **`phase-1-baseline`**
+- [x] Toàn bộ 0.1–0.11 đã merge vào `main`
+- [x] `mvn verify` pass, gồm test cùng ghế, hủy rồi đặt lại, hủy sát giờ, phân quyền Admin
+- [x] S1 `contention.js` chạy ở local: đúng 1 thắng, N−1 lỗi 409 `SEAT_ALREADY_BOOKED`; `verify-contention.sql` trả `active_claims = 1`, `duplicate_groups = 0`
+- [x] S3 `booking.js` chạy hết một lượt ngắn ở local, không có lỗi ngoài dự kiến
+- [x] Người 1 gắn tag **`phase-1-baseline`**
 
 Nếu không đạt: phần còn thiếu nhỏ (ví dụ test) cho thêm tối đa đến thứ Tư 25/11. Nếu thiếu phần làm đổi schema hoặc contract thì **không gắn tag**, mọi người dồn sang gỡ; GĐ2 lùi tương ứng và họp lại để quyết định cắt E6 sớm.
 
