@@ -7,6 +7,12 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  cache:
+    type: caffeine
+    # Fixed names: an undeclared cache fails fast, and hit ratios are exported from startup.
+    cache-names: theater-schedules,theater-showtimes
+    caffeine:
+      spec: maximumSize=1000,expireAfterWrite=60s,recordStats
   flyway:
     enabled: true
   jpa:

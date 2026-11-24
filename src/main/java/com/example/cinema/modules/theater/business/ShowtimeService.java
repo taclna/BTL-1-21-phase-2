@@ -8,12 +8,26 @@ import com.example.cinema.modules.theater.business.ShowtimeModuleApi.ShowtimeSta
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 
 public class ShowtimeService implements ShowtimeModuleApi {
+
+    /** Showtimes of one movie on one UTC date. */
+    public static final String SCHEDULE_CACHE = "theater-schedules";
+    /** Showtime snapshot with its seat layout; never holds booked seats. */
+    public static final String SHOWTIME_CACHE = "theater-showtimes";
+
+    private static final String SCHEDULE_KEY_OF_RESULT =
+            "{#result.movieId(), #result.startsAt().atOffset(T(java.time.ZoneOffset).UTC).toLocalDate()}";
 
     private static final Duration CLEANUP_BUFFER = Duration.ofMinutes(15);
 
@@ -51,6 +65,7 @@ public class ShowtimeService implements ShowtimeModuleApi {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = SCHEDULE_CACHE, key = SCHEDULE_KEY_OF_RESULT)
     public Showtime create(CreateShowtimeCommand command) {
         MovieModuleApi.MovieSnapshot movie = movieModuleApi
                 .findMovieForScheduling(command.movieId())
@@ -95,8 +110,25 @@ public class ShowtimeService implements ShowtimeModuleApi {
         return showtimeRepository.findByMovieIdAndStartsAtBetween(movieId, from, to);
     }
 
+    /**
+     * Cached reads use {@code sync = true} and writes evict exact keys on purpose: with the in-process Caffeine
+     * cache an eviction then waits for a load already in progress, so a read that started before the commit
+     * cannot leave its old value behind. TheaterCacheIntegrationTest guards this behaviour.
+     */
+    @Cacheable(cacheNames = SCHEDULE_CACHE, key = "{#movieId, #date}", sync = true)
+    public List<Showtime> findByMovieIdAndDate(UUID movieId, LocalDate date) {
+        Instant from = date.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant to = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        return List.copyOf(showtimeRepository.findByMovieIdAndStartsAtBetween(movieId, from, to));
+    }
+
+    /** Returns the cancelled showtime so its schedule cache entry can be evicted by exact key. */
     @Transactional
-    public void cancel(UUID showtimeId) {
+    @Caching(evict = {
+            @CacheEvict(cacheNames = SHOWTIME_CACHE, key = "#showtimeId"),
+            @CacheEvict(cacheNames = SCHEDULE_CACHE, key = SCHEDULE_KEY_OF_RESULT)
+    })
+    public Showtime cancel(UUID showtimeId) {
         Showtime showtime = showtimeRepository.findByIdForUpdate(showtimeId)
                 .orElseThrow(() -> new ShowtimeNotFoundException(showtimeId));
         Instant now = clock.instant();
@@ -104,7 +136,7 @@ public class ShowtimeService implements ShowtimeModuleApi {
             throw new TheaterBusinessException("Showtime cannot be cancelled: " + showtimeId);
         }
         cancellationGuards.forEach(guard -> guard.checkCancellationAllowed(showtimeId));
-        showtimeRepository.save(new Showtime(
+        Showtime cancelled = new Showtime(
                 showtime.id(),
                 showtime.movieId(),
                 showtime.auditoriumId(),
@@ -114,7 +146,9 @@ public class ShowtimeService implements ShowtimeModuleApi {
                 ShowtimeStatus.CANCELLED,
                 showtime.createdAt(),
                 now
-        ));
+        );
+        showtimeRepository.save(cancelled);
+        return cancelled;
     }
 
     @Override
@@ -123,6 +157,16 @@ public class ShowtimeService implements ShowtimeModuleApi {
             return null;
         }
         return showtimeRepository.findById(showtimeId).map(this::toSnapshot).orElse(null);
+    }
+
+    /**
+     * Overridden because the inherited default calls {@link #getShowtimeSnapshot} on {@code this} and would
+     * bypass the cache proxy. The lock methods below must always read the database and are never cached.
+     */
+    @Override
+    @Cacheable(cacheNames = SHOWTIME_CACHE, key = "#showtimeId", condition = "#showtimeId != null", sync = true)
+    public Optional<ShowtimeSnapshot> findShowtime(UUID showtimeId) {
+        return Optional.ofNullable(getShowtimeSnapshot(showtimeId));
     }
 
     @Override
