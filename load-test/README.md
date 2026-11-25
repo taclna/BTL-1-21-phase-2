@@ -96,4 +96,24 @@ Password không được ghi vào `environment.json`. Có thể đổi chu kỳ 
 
 Các file monitor có timestamp UTC. Khi tổng hợp, đối chiếu timestamp với raw k6 có tag `phase=measure`; runner không tự suy đoán ranh giới pha vì `setup()` của từng kịch bản có thời lượng khác nhau.
 
+### Chạy nhiều tag trong cùng phiên Kaggle
+
+`run-matrix.py` giữ công cụ đo ở một checkout riêng và lần lượt build các tag/nhánh ứng dụng trong checkout khác. Mỗi phiên bản được reset schema `cinema_load*`, seed lại, chạy API, đo rồi dừng trước khi chuyển sang phiên bản tiếp theo:
+
+~~~bash
+python load-test/run-matrix.py \
+  --app-ref phase-1-baseline \
+  --app-ref feature/phase2-idempotency \
+  --scenario contention \
+  --levels 2 \
+  --repeats 3 \
+  --database-pid "$DATABASE_PID" \
+  --movie-count 5 \
+  --deleted-count 0
+~~~
+
+Đây là cấu hình xác nhận nhanh, không phải số liệu chính thức. Khi đo chính thức, dùng dataset và mức tải đã chốt trong kế hoạch. Script chỉ cho phép reset PostgreSQL ở host local và database có tên bắt đầu bằng `cinema_load`; checkout ứng dụng có thay đổi tracked cũng bị từ chối để tránh mất dữ liệu.
+
+Mỗi `environment.json` ghi `appRef`, `appGitCommit` và `harnessGitCommit`. Manifest `load-test/results/matrix-*/matrix.json` liên kết từng phiên bản với thư mục evidence và log API tương ứng. Notebook `cinema-kaggle-cpu.ipynb` cài môi trường rồi gọi đúng quy trình này.
+
 Điền [mẫu báo cáo](../docs/phase-1/bao-cao-hieu-nang-mau.md) sau ba lượt mỗi mức. Báo p50/p95/p99, throughput, lỗi kỹ thuật, lỗi nghiệp vụ và tài nguyên; với contention ghi số winner, conflict đúng mã và xác nhận DB không có ghế bị giữ trùng. Chưa chạy thì để là chưa đo.
