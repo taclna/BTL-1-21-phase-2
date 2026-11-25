@@ -82,4 +82,94 @@ Ghi cùng commit, dataset, CPU/vCPU/quota, RAM, Java, PostgreSQL, k6, JVM flags,
 
 Trên Windows, dùng `run-baseline.ps1` với PID tiến trình Java. Nếu PostgreSQL chạy trong Docker, thêm `-DockerContainerNames btl-ktpm-db-1` để ghi `docker stats` theo giây vào CSV riêng. Khi chạy k6 thủ công, thêm `--include-system-env-vars` để script nhận fixture, URL và mức VU từ shell.
 
+### Theo dõi PostgreSQL và Prometheus trên Kaggle
+
+Runner Python mặc định lấy thêm ba nhóm bằng chứng trong mỗi lượt chạy:
+
+- `*-postgres.csv`: mỗi giây ghi số backend chờ lock, số connection active và `idle in transaction` từ `pg_stat_activity`.
+- `*-deadlocks.json`: bộ đếm `pg_stat_database.deadlocks` trước/sau và chênh lệch của lượt chạy.
+- `*-prometheus.txt`: raw snapshot của `/actuator/prometheus` mỗi 5 giây.
+
+Runner gọi CLI `psql`; trên Kaggle CLI này đã được cài cùng PostgreSQL. Cấu hình kết nối bằng biến chuẩn của PostgreSQL. Có thể dùng trực tiếp các biến `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` của ứng dụng; runner tự đọc JDBC URL, hoặc khai báo rõ:
+
+~~~bash
+export PGHOST=127.0.0.1
+export PGPORT=5432
+export PGDATABASE=cinema_load
+export PGUSER=cinema_load
+export PGPASSWORD='mat-khau-local'
+export PROMETHEUS_URL=http://127.0.0.1:8080/actuator/prometheus
+
+python load-test/run-baseline.py --scenario booking \
+  --api-pid "$API_PID" --database-pid "$DATABASE_PID"
+~~~
+
+Password không được ghi vào `environment.json`. Có thể đổi chu kỳ bằng `--postgres-interval`, `--prometheus-interval` và timeout bằng `--monitor-timeout`. Chỉ dùng `--skip-postgres` hoặc `--skip-prometheus` cho lượt chẩn đoán không dùng làm evidence chính thức.
+
+Các file monitor có timestamp UTC. Khi tổng hợp, đối chiếu timestamp với raw k6 có tag `phase=measure`; runner không tự suy đoán ranh giới pha vì `setup()` của từng kịch bản có thời lượng khác nhau.
+
+### Chạy nhiều tag trong cùng phiên Kaggle
+
+`run-matrix.py` giữ công cụ đo ở một checkout riêng và lần lượt build các tag/nhánh ứng dụng trong checkout khác. Mỗi phiên bản được reset schema `cinema_load*`, seed lại, chạy API, đo rồi dừng trước khi chuyển sang phiên bản tiếp theo:
+
+~~~bash
+python load-test/run-matrix.py \
+  --app-ref phase-1-baseline \
+  --app-ref feature/phase2-idempotency \
+  --scenario contention \
+  --levels 2 \
+  --repeats 3 \
+  --database-pid "$DATABASE_PID" \
+  --movie-count 5 \
+  --deleted-count 0
+~~~
+
+Đây là cấu hình xác nhận nhanh, không phải số liệu chính thức. Khi đo chính thức, dùng dataset và mức tải đã chốt trong kế hoạch. Script chỉ cho phép reset PostgreSQL ở host local và database có tên bắt đầu bằng `cinema_load`; checkout ứng dụng có thay đổi tracked cũng bị từ chối để tránh mất dữ liệu.
+
+Mỗi `environment.json` ghi `appRef`, `appGitCommit` và `harnessGitCommit`. Manifest `load-test/results/matrix-*/matrix.json` liên kết từng phiên bản với thư mục evidence và log API tương ứng. Notebook `cinema-kaggle-cpu.ipynb` cài môi trường rồi gọi đúng quy trình này.
+
+### Hạ tầng scale local bằng Docker
+
+`compose.scale.yaml` dựng PostgreSQL, Redis, hai API instance và nginx. Script PowerShell khởi động API 1 trước, chờ Flyway và readiness hoàn tất, rồi mới khởi động API 2 và nginx:
+
+~~~powershell
+powershell -ExecutionPolicy Bypass -File load-test/local/start-scale.ps1
+powershell -ExecutionPolicy Bypass -File load-test/local/verify-scale.ps1
+~~~
+
+Các địa chỉ mặc định:
+
+- nginx: `http://127.0.0.1:8080`
+- API 1: `http://127.0.0.1:8081`
+- API 2: `http://127.0.0.1:8082`
+- PostgreSQL: `127.0.0.1:55432`
+- Redis: `127.0.0.1:56379`
+
+Nginx trả header `X-Cinema-Upstream` để xác nhận request được phân phối. `/actuator/*` không được proxy công khai; runner lấy Prometheus trực tiếp từ từng API. Dừng demo nhưng giữ volume PostgreSQL:
+
+~~~powershell
+powershell -ExecutionPolicy Bypass -File load-test/local/stop-scale.ps1
+~~~
+
+Chỉ khi muốn xóa database demo mới thêm `-RemoveVolumes`.
+
+### Hạ tầng scale trên Kaggle
+
+Kaggle không dùng Docker cho phép đo E6. Notebook gọi `setup-infrastructure.sh` để cài và kiểm tra nginx, Redis và `taskset` trực tiếp. Có thể chạy thủ công:
+
+~~~bash
+bash load-test/kaggle/setup-infrastructure.sh
+bash load-test/kaggle/start-infrastructure.sh
+curl -fsS http://127.0.0.1:8080/nginx-health
+redis-cli -h 127.0.0.1 -p 6379 ping
+~~~
+
+`run-pinned.sh` ghim một tiến trình vào core chỉ định, ví dụ `bash load-test/kaggle/run-pinned.sh 0 java -jar app.jar`. Cấu hình mặc định dành core 2 cho Redis và core 3 cho nginx; API 1/API 2 sẽ dùng core 0/1 khi triển khai E6. Dừng hạ tầng bằng:
+
+~~~bash
+bash load-test/kaggle/stop-infrastructure.sh
+~~~
+
+Redis trong phần này là hạ tầng cho E2/E6, không phải nguồn sự thật của E7 idempotency.
+
 Điền [mẫu báo cáo](../docs/phase-1/bao-cao-hieu-nang-mau.md) sau ba lượt mỗi mức. Báo p50/p95/p99, throughput, lỗi kỹ thuật, lỗi nghiệp vụ và tài nguyên; với contention ghi số winner, conflict đúng mã và xác nhận DB không có ghế bị giữ trùng. Chưa chạy thì để là chưa đo.

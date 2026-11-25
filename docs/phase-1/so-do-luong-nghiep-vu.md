@@ -1,6 +1,6 @@
 # Sơ đồ luồng nghiệp vụ hệ thống quản lý rạp phim
 
-Tài liệu mô tả luồng nghiệp vụ theo mã nguồn hiện tại, đối chiếu ngày 29/10/2026. Sơ đồ dùng Mermaid; mở file bằng trình xem Markdown hỗ trợ Mermaid để hiển thị.
+Tài liệu mô tả luồng nghiệp vụ theo mã nguồn hiện tại, đối chiếu ngày 29/10/2026. Luồng xem và hủy booking được cập nhật ngày 24/11/2026 theo Bước 0 của Pha 2 (hủy mềm, mốc 30 phút, quyền Admin). Sơ đồ dùng Mermaid; mở file bằng trình xem Markdown hỗ trợ Mermaid để hiển thị.
 
 ## 1. Phạm vi và tác nhân
 
@@ -8,7 +8,7 @@ Tài liệu mô tả luồng nghiệp vụ theo mã nguồn hiện tại, đối
 |---|---|
 | Khách vãng lai (Guest) | Xem phim, lịch chiếu, trạng thái ghế; đăng ký và đăng nhập |
 | Khách hàng (Customer) | Đặt ghế, xem danh sách/chi tiết và hủy booking của mình sau khi đăng nhập |
-| Quản trị viên (Admin) | Quản lý phim, phòng và sơ đồ ghế; tạo và hủy suất chiếu |
+| Quản trị viên (Admin) | Quản lý phim, phòng và sơ đồ ghế; tạo và hủy suất chiếu; xem và hủy mọi booking |
 | Hệ thống | Xác thực, kiểm tra điều kiện nghiệp vụ, tính giá, lưu booking và bảo vệ ghế khỏi đặt trùng |
 
 Hệ thống phục vụ một địa điểm rạp có nhiều phòng chiếu. Booking là một lần đặt từ 1 đến 8 ghế trong cùng một suất chiếu. Các hoạt động dưới đây được thực hiện qua API; dự án chưa có giao diện khách hàng riêng.
@@ -59,10 +59,14 @@ flowchart TD
     S7 --> C3
     S8 --> C8[Xem booking của mình]
     C8 --> C9{Muốn hủy booking?}
-    C9 -->|Có| C10[Yêu cầu hủy; hệ thống kiểm tra sở hữu]
-    C10 --> C11[Xóa booking và giải phóng ghế nếu hợp lệ]
+    C9 -->|Có| C10{Booking CONFIRMED và còn ít nhất 30 phút trước giờ chiếu?}
+    C10 -->|Có| C11[Chuyển booking sang CANCELLED và giải phóng ghế]
+    C10 -->|Không| C12[Từ chối hủy; booking giữ nguyên]
     C9 -->|Không| FINISH([Kết thúc])
     C11 --> FINISH
+    C12 --> FINISH
+    ROLE -->|Admin quản lý booking| D1[Admin đăng nhập và xem mọi booking]
+    D1 --> C9
     A3 --> FINISH
 ```
 
@@ -128,33 +132,76 @@ flowchart TD
 | Giá VIP | Bằng giá cơ bản nhân `1.20` |
 | Tổng tiền | Tổng giá đã chốt của từng ghế; giá ghế và tổng tiền làm tròn 2 chữ số thập phân, `HALF_UP` |
 | Nguồn giá | Hệ thống tự tính từ dữ liệu suất chiếu và loại ghế, không nhận giá do khách tự khai |
-| Chống đặt trùng | Khóa suất chiếu trong giao dịch; ràng buộc duy nhất cho cặp suất chiếu và ghế tại cơ sở dữ liệu |
+| Chống đặt trùng | Khóa suất chiếu trong giao dịch; partial unique index cho cặp suất chiếu và ghế, chỉ tính ghế chưa giải phóng (`released_at IS NULL`), nên ghế của booking đã hủy được đặt lại |
 | Tính toàn vẹn | Booking và các ghế được lưu cùng giao dịch; lưu thất bại thì hoàn tác toàn bộ |
 
 **Lưu ý về thanh toán:** booking hiện được ghi nhận ngay khi lưu thành công và giữ ghế. Trường `paymentStatus` khởi tạo là `PENDING`, nhưng chưa có luồng thanh toán thật hay tự động hết hạn. Đây là trạng thái thanh toán, không phải trạng thái giữ ghế tạm.
 
 ## 5. Luồng xem và hủy booking
 
+### 5.1. Xem booking
+
 ```mermaid
 flowchart TD
-    C0([Người dùng đăng nhập]) --> C1[Xem danh sách booking của mình]
-    C1 --> C2[Chọn booking cần xem hoặc hủy]
-    C2 --> C3[Tìm booking theo mã booking và mã người dùng từ JWT]
-    C3 --> C4{Tìm thấy booking thuộc người dùng?}
-    C4 -->|Không| C5[Trả lỗi không tìm thấy]
-    C4 -->|Có| C6{Thao tác yêu cầu}
-    C6 -->|Xem| C7[Trả chi tiết booking và các ghế]
-    C6 -->|Hủy| C8[Xóa các ghế của booking và xóa booking trong cùng giao dịch]
-    C8 --> C9{Giao dịch thành công?}
-    C9 -->|Không| C10[Hoàn tác và trả lỗi]
-    C9 -->|Có| C11[Trả kết quả hủy thành công; ghế có thể được đặt lại]
-    C7 --> C12([Kết thúc])
-    C11 --> C12
-    C5 --> C12
-    C10 --> C12
+    V0([Người dùng đã đăng nhập]) --> V1{Vai trò trong JWT}
+    V1 -->|CUSTOMER| V2[Xem danh sách booking của mình, có phân trang]
+    V1 -->|ADMIN| V3[Xem danh sách mọi booking, có phân trang]
+    V2 --> V4[Chọn một booking]
+    V3 --> V4
+    V4 --> V5{Là ADMIN?}
+    V5 -->|Có| V6[Tìm theo bookingId]
+    V5 -->|Không| V7[Tìm theo bookingId và mã người dùng từ JWT]
+    V6 --> V8{Tìm thấy?}
+    V7 --> V8
+    V8 -->|Không| V9[Trả 404 BOOKING_NOT_FOUND]
+    V8 -->|Có| V10[Trả chi tiết booking, kể cả booking CANCELLED]
+    V9 --> V11([Kết thúc])
+    V10 --> V11
 ```
 
-Hiện tại hủy booking là **xóa vật lý**, chưa lưu lịch sử với trạng thái `CANCELLED`. Mã nguồn chưa kiểm tra mốc hủy trước giờ chiếu 30 phút; không đưa điều kiện dự kiến này vào sơ đồ hiện trạng.
+### 5.2. Hủy booking (hủy mềm)
+
+```mermaid
+flowchart TD
+    C0([Yêu cầu hủy booking từ người dùng đã đăng nhập]) --> C1{Là ADMIN?}
+    C1 -->|Có| C2[Tìm và khóa booking theo bookingId]
+    C1 -->|Không| C3[Tìm và khóa booking theo bookingId và mã người dùng từ JWT]
+    C2 --> C4{Tìm thấy?}
+    C3 --> C4
+    C4 -->|Không| C5[Trả 404 BOOKING_NOT_FOUND]
+    C4 -->|Có| C6{Trạng thái là CONFIRMED?}
+    C6 -->|Không| C7[Trả 409 BOOKING_CANNOT_BE_CANCELLED]
+    C6 -->|Có| C8{Tìm thấy suất và còn ít nhất 30 phút trước giờ chiếu?}
+    C8 -->|Không| C7
+    C8 -->|Có| C9[Chuyển booking sang CANCELLED, ghi cancelled_at]
+    C9 --> C10[Ghi released_at cho mọi ghế của booking]
+    C10 --> C11{Giao dịch thành công?}
+    C11 -->|Không| C12[Hoàn tác và trả lỗi; booking và ghế giữ nguyên]
+    C11 -->|Có| C13[Trả 204; ghế có thể được đặt lại]
+    C5 --> C14([Kết thúc])
+    C7 --> C14
+    C12 --> C14
+    C13 --> C14
+```
+
+### 5.3. Vòng đời booking
+
+```mermaid
+stateDiagram-v2
+    [*] --> CONFIRMED: Đặt ghế thành công
+    CONFIRMED --> CANCELLED: Hủy khi còn ít nhất 30 phút trước giờ chiếu
+    CANCELLED --> [*]
+```
+
+| Quy tắc | Nội dung |
+|---|---|
+| Hủy mềm | Không xóa bản ghi. Booking chuyển sang `CANCELLED` kèm `cancelled_at`; ghế được giải phóng bằng `released_at`, trong cùng giao dịch |
+| Mốc 30 phút | So với giờ bắt đầu suất chiếu. Còn đúng 30 phút vẫn hủy được |
+| Hủy lại | Booking đã `CANCELLED` trả `409 BOOKING_CANNOT_BE_CANCELLED` |
+| Quyền hủy | Customer chỉ hủy booking của mình; booking của người khác trả `404`. Admin hủy được mọi booking nhưng vẫn theo trạng thái và mốc 30 phút |
+| Hủy đồng thời | Hàng booking bị khóa trong giao dịch, nên chỉ một yêu cầu hủy thành công; yêu cầu sau nhận `409` |
+| Đặt lại ghế | Ghế có `released_at` được coi là trống; lịch sử booking cũ vẫn còn |
+| Thanh toán | Hủy booking không đổi `paymentStatus`; chưa có hoàn tiền |
 
 ## 6. Luồng tạo và hủy suất chiếu của Admin
 
@@ -175,8 +222,8 @@ flowchart TD
     A1 -->|Hủy suất| A8[Chọn và khóa suất chiếu]
     A8 --> A9{Suất tồn tại, SCHEDULED và chưa bắt đầu?}
     A9 -->|Không| ERR
-    A9 -->|Có| A10{Còn booking của suất chiếu?}
-    A10 -->|Có| A11[Từ chối hủy suất có booking]
+    A9 -->|Có| A10{Còn booking CONFIRMED của suất chiếu?}
+    A10 -->|Có| A11[Từ chối hủy suất có booking CONFIRMED]
     A10 -->|Không| A12[Chuyển suất sang CANCELLED]
     A12 --> DONE
     A11 --> STOP([Không thay đổi suất chiếu])
@@ -186,28 +233,29 @@ flowchart TD
 - Admin cần chuẩn bị phim, phòng và sơ đồ ghế trước khi tạo suất; phim và phòng có thể được tạo theo thứ tự bất kỳ.
 - Phim được xóa mềm. Phòng cũng được xóa mềm và không được xóa khi còn suất `SCHEDULED` trong tương lai.
 - Tạo booking và hủy suất dùng chung cơ chế khóa suất chiếu để tránh đồng thời đặt thành công vào một suất vừa bị hủy.
-- Guard hủy suất hiện xem mọi booking còn lưu là booking đã xác nhận, kể cả khi `paymentStatus = PENDING`.
+- Guard hủy suất chỉ xét booking `CONFIRMED`, kể cả khi `paymentStatus = PENDING`. Booking đã `CANCELLED` không chặn việc hủy suất.
 
 ## 7. Phân biệt hiện trạng và yêu cầu dự kiến
 
-Một số nội dung trong tài liệu đặc tả/yêu cầu là định hướng, chưa phản ánh đầy đủ mã nguồn hiện tại:
+Bảng dưới ghi hiện trạng trong mã nguồn của các nội dung nêu ở tài liệu đặc tả/yêu cầu; một số nội dung vẫn là định hướng, chưa triển khai:
 
 | Nội dung | Hiện trạng dùng trong sơ đồ |
 |---|---|
-| Danh tính và quyền sở hữu booking | Đã lấy người dùng từ JWT; truy vấn xem/hủy theo cả mã booking và mã người dùng |
-| Hủy booking | Xóa vật lý và giải phóng ghế; chưa có hủy mềm hoặc mốc 30 phút |
-| Trạng thái booking | Chưa có trường trạng thái `CONFIRMED`/`CANCELLED`; booking còn lưu được coi là đã xác nhận |
+| Danh tính và quyền sở hữu booking | Đã lấy người dùng từ JWT; Customer xem/hủy theo cả `bookingId` và mã người dùng; Admin theo `bookingId` |
+| Hủy booking | Đã hủy mềm, giải phóng ghế bằng `released_at`; chỉ hủy khi còn ít nhất 30 phút trước giờ chiếu |
+| Trạng thái booking | Đã có `CONFIRMED`/`CANCELLED` và `cancelled_at` |
 | Thanh toán | Có trường trạng thái thanh toán; chưa có quy trình thanh toán/hoàn tiền thật |
 | Giữ ghế tạm và hết hạn | Chưa triển khai |
-| Admin xem mọi booking | Chưa có endpoint riêng cho chức năng này |
+| Admin xem mọi booking | Đã có `GET /api/v1/admin/bookings` (phân trang); Admin xem chi tiết và hủy được mọi booking |
 
 ## 8. Nguồn đối chiếu
 
 - [README dự án](../../README.md), [đặc tả hệ thống](SPEC.md) và [yêu cầu Booking](booking_requirements.md).
 - [Xác thực và phân quyền](../../src/main/java/com/example/cinema/config/SecurityConfig.java).
 - [Nghiệp vụ tài khoản](../../src/main/java/com/example/cinema/modules/identity/business/IdentityService.java).
-- [API booking](../../src/main/java/com/example/cinema/modules/booking/api/BookingController.java) và [nghiệp vụ booking](../../src/main/java/com/example/cinema/modules/booking/business/BookingService.java).
-- [Lưu và xóa booking, kiểm tra booking khi hủy suất](../../src/main/java/com/example/cinema/modules/booking/data/BookingRepositoryAdapter.java).
+- [API booking](../../src/main/java/com/example/cinema/modules/booking/api/BookingController.java), [API booking của Admin](../../src/main/java/com/example/cinema/modules/booking/api/AdminBookingController.java) và [nghiệp vụ booking](../../src/main/java/com/example/cinema/modules/booking/business/BookingService.java).
+- [Lưu và hủy mềm booking, kiểm tra booking khi hủy suất](../../src/main/java/com/example/cinema/modules/booking/data/BookingRepositoryAdapter.java).
+- [Migration hủy mềm booking](../../src/main/resources/db/migration/V9__soft_cancel_bookings.sql).
 - [Nghiệp vụ suất chiếu](../../src/main/java/com/example/cinema/modules/theater/business/ShowtimeService.java) và [nghiệp vụ phòng chiếu](../../src/main/java/com/example/cinema/modules/theater/business/AuditoriumService.java).
 
 Khi tài liệu cũ và mã nguồn khác nhau, tài liệu này ưu tiên hành vi trong mã nguồn để mô tả luồng hiện tại.

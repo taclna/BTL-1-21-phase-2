@@ -1,15 +1,20 @@
 import exec from 'k6/execution';
 import { check, fail, sleep } from 'k6';
-import { Counter, Rate, Trend } from 'k6/metrics';
+import { Counter } from 'k6/metrics';
 import { VUS, fixture, request, parse, data, cleanupUsers, summary } from './lib/common.js';
 
 const saved = fixture(true);
 const durationSeconds = Number(__ENV.DURATION_SECONDS || 60);
+// Only the first SEAT_POOL seats are used so VUs really overlap. Defaulting to VUS keeps
+// demand (2-4 seats per VU) at about three times the supply at every load level.
+const seatPool = Math.max(4, Number(__ENV.SEAT_POOL || VUS));
 
 const overlapSuccess = new Counter('overlap_success_bookings');
 const overlapConflicts = new Counter('overlap_seat_conflicts');
 const unexpectedOutcomes = new Counter('unexpected_overlap_outcomes');
-const deadlockErrors = new Counter('overlap_deadlocks');
+// The API hides SQLSTATE 40P01 behind a generic 500, so a deadlock shows up here as a server error.
+// The deadlock count itself comes from pg_stat_database (verify-deadlocks.sql), before and after the run.
+const serverErrors = new Counter('overlap_server_errors');
 
 export const options = {
     scenarios: {
@@ -21,7 +26,7 @@ export const options = {
         }
     },
     thresholds: {
-        overlap_deadlocks: ['count==0'],
+        overlap_server_errors: ['count==0'],
         unexpected_overlap_outcomes: ['count==0'],
         checks: ['rate==1']
     },
@@ -58,7 +63,7 @@ export function setup() {
         fail('Target showtime must have at least 4 seats to perform overlapping bookings');
     }
 
-    const seatIds = availableSeats.map(s => s.id || s.seatId);
+    const seatIds = availableSeats.slice(0, seatPool).map(s => s.id || s.seatId);
     return {
         showtimeId: saved.showtimeId,
         seatIds: seatIds
@@ -102,7 +107,7 @@ export default function (context) {
     // Cancel previously held booking (if any) before attempting a new booking
     const prevBookingId = activeBookings[user.userId];
     if (prevBookingId) {
-        const cancelRes = request('DELETE', '/api/v1/bookings/' + prevBookingId, null, user.token, [204, 404, 409], 'cleanup');
+        request('DELETE', '/api/v1/bookings/' + prevBookingId, null, user.token, [204, 404, 409], 'cleanup');
         delete activeBookings[user.userId];
     }
 
@@ -122,10 +127,7 @@ export default function (context) {
     const body = parse(response);
     const won = response.status === 201 && body && body.data && body.data.bookingId;
     const conflict = response.status === 409 && body && body.error && body.error.code === 'SEAT_ALREADY_BOOKED';
-    // Deadlock is identified by Postgres SQLSTATE 40P01 or explicit deadlock error, not arbitrary 500s
-    const isDeadlock = (response.status === 409 || response.status === 500) && body && body.error &&
-        (body.error.code === 'DEADLOCK' ||
-         (typeof body.error.message === 'string' && body.error.message.toLowerCase().includes('deadlock')));
+    const serverError = response.status === 0 || response.status >= 500;
 
     if (won) {
         overlapSuccess.add(1);
@@ -134,14 +136,14 @@ export default function (context) {
         overlapConflicts.add(1);
     } else {
         unexpectedOutcomes.add(1);
-        if (isDeadlock) {
-            deadlockErrors.add(1);
+        if (serverError) {
+            serverErrors.add(1);
         }
     }
 
     check(response, {
         'Outcome is either 201 (booked) or 409 (seat conflict)': () => !!(won || conflict),
-        'No deadlock or 5xx server error': () => !isDeadlock && response.status < 500
+        'No 5xx or transport error': () => !serverError
     });
 
     sleep(0.1); // Think time 100ms

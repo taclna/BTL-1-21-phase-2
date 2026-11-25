@@ -1,0 +1,72 @@
+x-api-environment: &api-environment
+  SPRING_PROFILES_ACTIVE: local
+  SERVER_PORT: 8080
+  SERVER_ADDRESS: 0.0.0.0
+  DB_URL: jdbc:postgresql://db:5432/cinema
+  DB_USERNAME: cinema
+  DB_PASSWORD: ${DB_PASSWORD:-cinema}
+  JWT_SECRET: ${JWT_SECRET:-local-only-change-me-before-any-real-deployment-2026}
+  JWT_EXPIRATION_SECONDS: ${JWT_EXPIRATION_SECONDS:-3600}
+  DEMO_ADMIN_USERNAME: ${DEMO_ADMIN_USERNAME:-admin}
+  DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-demo-pass-1234}
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cinema
+      POSTGRES_USER: cinema
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-cinema}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - scale_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${SCALE_DB_PORT:-55432}:5432"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:${SCALE_REDIS_PORT:-56379}:6379"
+
+  api1:
+    image: cinema-phase2-api:local
+    build: .
+    environment: *api-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${SCALE_API1_PORT:-8081}:8080"
+
+  api2:
+    image: cinema-phase2-api:local
+    build: .
+    environment: *api-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${SCALE_API2_PORT:-8082}:8080"
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - api1
+      - api2
+    volumes:
+      - ./load-test/nginx/nginx.docker.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "127.0.0.1:${SCALE_NGINX_PORT:-8080}:8080"
+
+volumes:
+  scale_postgres_data:
