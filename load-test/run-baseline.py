@@ -269,6 +269,10 @@ def sample_resources(k6_pid, api_pid, db_pid, writer, previous, previous_time, c
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", choices=("movie-read", "booking", "contention"), default="booking")
+    parser.add_argument("--app-ref", default=os.environ.get("APP_REF"),
+                        help="application tag/branch being measured")
+    parser.add_argument("--app-commit", default=os.environ.get("APP_GIT_COMMIT"),
+                        help="resolved application commit being measured")
     parser.add_argument("--k6", default=os.environ.get("K6", "k6"))
     parser.add_argument("--levels", type=int, nargs="+", default=(10, 25, 50))
     parser.add_argument("--repeats", type=int, default=3)
@@ -304,7 +308,9 @@ def main():
     if args.postgres_interval <= 0 or args.prometheus_interval <= 0 or args.monitor_timeout <= 0:
         parser.error("monitor intervals and timeout must be positive")
 
-    commit = git_value("rev-parse", "HEAD")
+    harness_commit = git_value("rev-parse", "HEAD")
+    app_commit = args.app_commit or harness_commit
+    app_ref = args.app_ref or "current-worktree"
     dirty = git_value("status", "--porcelain", "--untracked-files=all", "--", "src/main", "pom.xml", "load-test")
     if dirty:
         parser.error("commit source and load-test scripts first so the report identifies the measured revision")
@@ -330,7 +336,12 @@ def main():
     run_root.mkdir(parents=True, exist_ok=False)
     metadata = {
         "collectedAtUtc": utc_now(),
-        "gitCommit": commit,
+        # Keep gitCommit for compatibility with existing summary scripts. It
+        # now identifies the application under test, not the harness checkout.
+        "gitCommit": app_commit,
+        "appRef": app_ref,
+        "appGitCommit": app_commit,
+        "harnessGitCommit": harness_commit,
         "scenario": args.scenario,
         "levels": args.levels,
         "repeats": args.repeats,
@@ -382,7 +393,7 @@ def main():
                 "VUS": str(level),
                 "WARMUP_SECONDS": str(warmup_seconds),
                 "DURATION_SECONDS": "120" if args.scenario in ("movie-read", "booking") else "1",
-                "GIT_COMMIT": commit,
+                "GIT_COMMIT": app_commit,
                 "SUMMARY_PATH": str(summary_path),
             })
             if args.scenario == "contention":
