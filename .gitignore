@@ -4,5 +4,6 @@ target/
 *.iml
 .vscode/
 load-test/fixtures.local.json
+load-test/fixtures.e7-local.json
 load-test/results/*
 !load-test/results/.gitkeep
