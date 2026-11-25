@@ -12,6 +12,8 @@ import com.example.cinema.modules.theater.business.Showtime;
 import com.example.cinema.modules.theater.business.ShowtimeService;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -29,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -66,6 +69,9 @@ class BookingApiIntegrationTest {
 
     @Autowired
     private ShowtimeService showtimeService;
+
+    @LocalServerPort
+    private int serverPort;
 
     private UUID firstCustomer;
     private UUID secondCustomer;
@@ -108,6 +114,40 @@ class BookingApiIntegrationTest {
         assertThat(created.getBody()).isNotNull();
         assertThat(replayed.getBody().path("data").path("bookingId").asText())
                 .isEqualTo(created.getBody().path("data").path("bookingId").asText());
+        assertThat(countBookingsForShowtime()).isEqualTo(1);
+    }
+
+    @Test
+    void retryAfterClientDisconnectsBeforeReadingResponseReplaysCommittedBooking() throws Exception {
+        String key = UUID.randomUUID().toString();
+        String token = jwtTokenService.issue(new AuthenticatedUser(firstCustomer, User.Role.CUSTOMER));
+        String body = "{\"showtimeId\":\"" + showtime.id() + "\",\"seatIds\":[\"" + seatId + "\"]}";
+        byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
+        String request = "POST /api/v1/bookings HTTP/1.1\r\n"
+                + "Host: 127.0.0.1:" + serverPort + "\r\n"
+                + "Authorization: Bearer " + token + "\r\n"
+                + "Idempotency-Key: " + key + "\r\n"
+                + "Content-Type: application/json\r\n"
+                + "Content-Length: " + bodyBytes.length + "\r\n"
+                + "Connection: close\r\n\r\n";
+
+        // Send a complete request, then disconnect without reading the response.
+        // The server may have committed before it learns that the client is gone.
+        try (Socket socket = new Socket("127.0.0.1", serverPort)) {
+            socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
+            socket.getOutputStream().write(bodyBytes);
+            socket.getOutputStream().flush();
+            socket.shutdownOutput();
+        }
+
+        waitForCommittedBooking(firstCustomer, key);
+
+        ResponseEntity<JsonNode> replayed = createBooking(firstCustomer, List.of(seatId), key);
+
+        assertThat(replayed.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(replayed.getHeaders().getFirst("Idempotency-Replayed")).isEqualTo("true");
+        assertThat(replayed.getBody()).isNotNull();
+        assertThat(replayed.getBody().path("data").path("bookingId").asText()).isNotBlank();
         assertThat(countBookingsForShowtime()).isEqualTo(1);
     }
 
@@ -515,6 +555,17 @@ class BookingApiIntegrationTest {
                 Integer.class,
                 userId,
                 UUID.fromString(idempotencyKey));
+    }
+
+    private void waitForCommittedBooking(UUID userId, String idempotencyKey) throws InterruptedException {
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadlineNanos) {
+            if (countBookingsForShowtime() == 1 && countIdempotencyRecords(userId, idempotencyKey) == 1) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("Booking did not commit after the client disconnected");
     }
 
     private ResponseEntity<JsonNode> get(String path, UUID customerId) {
