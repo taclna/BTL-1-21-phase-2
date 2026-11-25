@@ -1,5 +1,6 @@
 import importlib.util
 import pathlib
+import tempfile
 import unittest
 from unittest import mock
 
@@ -28,6 +29,23 @@ class RunMatrixTest(unittest.TestCase):
             expected,
             run_matrix.resolve_ref(run_matrix.HARNESS_ROOT, "phase-1-baseline"),
         )
+
+    @mock.patch.object(run_matrix, "git_value", return_value="")
+    @mock.patch.object(run_matrix, "run")
+    def test_fresh_app_checkout_uses_a_normal_clone(self, run_command, _git_value):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            app_dir = pathlib.Path(temporary_directory) / "app"
+
+            def create_checkout(command, **_kwargs):
+                if command[:2] == ["git", "clone"]:
+                    (app_dir / ".git").mkdir(parents=True)
+
+            run_command.side_effect = create_checkout
+            run_matrix.ensure_app_checkout("https://example.test/repo.git", app_dir)
+
+        clone_command = run_command.call_args_list[0].args[0]
+        self.assertEqual(["git", "clone"], clone_command[:2])
+        self.assertNotIn("--no-checkout", clone_command)
 
     @mock.patch.object(run_matrix, "run")
     @mock.patch.object(

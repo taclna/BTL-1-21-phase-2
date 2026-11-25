@@ -57,11 +57,20 @@ def safe_name(value):
 def ensure_app_checkout(repo_url, app_dir):
     if not app_dir.exists():
         app_dir.parent.mkdir(parents=True, exist_ok=True)
-        run(["git", "clone", "--no-checkout", repo_url, str(app_dir)])
+        # Use a normal clone so the index and working tree start in sync.
+        # A --no-checkout clone reports every tracked file as deleted, which
+        # correctly trips the dirty-worktree safety check below.
+        run(["git", "clone", repo_url, str(app_dir)])
     if not (app_dir / ".git").exists():
         raise RuntimeError(f"application directory is not a Git checkout: {app_dir}")
     dirty = git_value(app_dir, "status", "--porcelain", "--untracked-files=no")
     if dirty:
+        checked_out_entries = [path for path in app_dir.iterdir() if path.name != ".git"]
+        if not checked_out_entries:
+            raise RuntimeError(
+                "application checkout has no working-tree files; remove the dedicated "
+                f"checkout and rerun: {app_dir}"
+            )
         raise RuntimeError(f"application checkout has tracked changes; clean it first:\n{dirty}")
     run([
         "git", "fetch", "--prune", "origin",
