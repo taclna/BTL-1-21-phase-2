@@ -55,6 +55,42 @@ k6 run --include-system-env-vars load-test/contention.js
 
 Chạy ma trận 10/25/50 VU, ba lượt mỗi mức, với index 1–9. Không chạy lại cùng index trước khi hoàn tất vì ghế của lượt thắng vẫn được giữ.
 
+## Dataset lớn (S7, Pha 2)
+
+`SEED_SCOPE=large` tạo mọi thứ của `all` và thêm dataset lớn cho E4 và S5 (xem `docs/phase-2/ke-hoach.md` mục 8). Mọi booking đi qua API thật, nên dữ liệu tuân đúng quy tắc nghiệp vụ, constraint và hủy mềm.
+
+~~~bash
+export SEED_SCOPE=large VUS=50
+node load-test/seed.mjs
+~~~
+
+Mặc định: 4 phòng × 300 ghế (15 hàng × 20, 2 hàng cuối VIP), 30 ngày × 20 suất (600 suất, bắt đầu từ 2 ngày sau), lấp 78% ghế mỗi suất, hủy khoảng 43% booking rồi đặt lại ghế trống, nên khoảng 200.000 dòng `booking_seats` với khoảng 30% đã hủy. 20 user "nặng" có 200–500 booking mỗi người, phần còn lại chia cho 300 user thường.
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `LARGE_DAYS`, `LARGE_SHOWTIMES_PER_DAY`, `LARGE_ROOMS` | 30, 20, 4 | Số ngày, suất mỗi ngày, số phòng (mỗi phòng tối đa khoảng 7 suất/ngày) |
+| `LARGE_ROWS`, `LARGE_SEATS_PER_ROW`, `LARGE_VIP_ROWS` | 15, 20, 2 | Sơ đồ ghế mỗi phòng |
+| `LARGE_MOVIES` | 50 | Số phim đầu tiên được xếp suất |
+| `LARGE_FILL_RATIO`, `LARGE_CANCELLED_SHARE` | 0.78, 0.3 | Tỷ lệ ghế được đặt; tỷ lệ dòng `booking_seats` đã hủy |
+| `LARGE_HEAVY_USERS`, `LARGE_HEAVY_MIN_BOOKINGS`, `LARGE_HEAVY_MAX_BOOKINGS`, `LARGE_NORMAL_USERS` | 20, 200, 500, 300 | Phân bố booking theo user |
+| `SEED_CONCURRENCY`, `SEED_RANDOM` | 8, 42 | Số request song song; seed ngẫu nhiên (cùng giá trị thì cùng kế hoạch dữ liệu) |
+
+Fixture có thêm `showtimes` (600 suất kèm `movieId`, `date`), `heavyUsers` (có token, dùng cho đo `GET /bookings`) và `largeStats` (số liệu thực tế đã tạo, thời gian seed). Ghi `largeStats` vào báo cáo. Nếu seed quá lâu, giảm `LARGE_DAYS` hoặc `LARGE_FILL_RATIO` và ghi lại cấu hình đã dùng. `refresh-tokens.mjs` làm mới cả token của `heavyUsers`.
+
+## Stress tải đọc (S5, Pha 2)
+
+`stress-read.js` dùng open model (`ramping-arrival-rate`): k6 giữ đúng tốc độ gửi kể cả khi API chậm, nên điểm bão hòa hiện ra bằng latency tăng và request bị thiếu. Tỷ trọng giống phần đọc của `booking.js`: khoảng 41% danh sách phim, 29,5% lịch chiếu, 29,5% trạng thái ghế, không cần JWT. Với fixture `large`, mỗi request chọn ngẫu nhiên một trong các suất.
+
+~~~bash
+export STAGES=250,500,1000,1500,2000,3000 STAGE_SECONDS=60 RAMP_SECONDS=10 MAX_VUS=600
+k6 run --include-system-env-vars load-test/stress-read.js
+python load-test/run-baseline.py --scenario stress-read --api-pid "$API_PID" --database-pid "$DATABASE_PID"
+~~~
+
+Warm-up 30 giây ở bậc đầu, sau đó mỗi bậc giữ `STAGE_SECONDS`; khoảng chuyển bậc (`RAMP_SECONDS`) bị loại khỏi số liệu. Summary JSON có bảng `stages` (tốc độ đạt được, p50/p95/p99, lỗi kỹ thuật, tỷ lệ thiếu request) và `metadata.maxSustainableRate`: bậc cao nhất mà nó và mọi bậc thấp hơn đều đạt p95 < `READ_P95_MS` (500), lỗi kỹ thuật < 1% và thiếu request < 1%. Tỷ lệ thiếu = `1 − requests / (targetRate × STAGE_SECONDS)`, vì `dropped_iterations` của k6 không tách được theo bậc.
+
+k6 luôn trả mã thành công với S5 khi script chạy hết: vượt SLO ở bậc cao là kết quả cần đo, không phải lỗi. Với runner, mỗi lượt là một lần chạy đủ các bậc (`stress-read-run1..3`), không dùng `--levels`. Trên Kaggle, theo dõi CPU của k6 trong CSV tài nguyên: nếu k6 gần bão hòa CPU trước API thì ghi nhận giới hạn công cụ, không kết luận API đã bão hòa.
+
 ## Baseline lặp và tài nguyên trên Kaggle/Linux
 
 Commit code, seed script và k6 trước khi đo. Tạo fixture một lần với `VUS=50`; không seed lại giữa các lượt booking. Truyền PID tiến trình Java/PostgreSQL để runner lấy CPU/RSS của API, DB và chính k6:
@@ -115,6 +151,20 @@ python load-test/run-matrix.py \
 Đây là cấu hình xác nhận nhanh, không phải số liệu chính thức. Khi đo chính thức, dùng dataset và mức tải đã chốt trong kế hoạch. Script chỉ cho phép reset PostgreSQL ở host local và database có tên bắt đầu bằng `cinema_load`; checkout ứng dụng có thay đổi tracked cũng bị từ chối để tránh mất dữ liệu.
 
 Mỗi `environment.json` ghi `appRef`, `appGitCommit` và `harnessGitCommit`. Manifest `load-test/results/matrix-*/matrix.json` liên kết từng phiên bản với thư mục evidence và log API tương ứng. Notebook `cinema-kaggle-cpu.ipynb` cài môi trường rồi gọi đúng quy trình này.
+
+`--seed-scope` chọn dataset: `auto` (mặc định, `movie` cho movie-read và `all` cho các kịch bản khác), `movie`, `all` hoặc `large`. Với `large`, chỉnh kích thước bằng các biến `LARGE_*` ở mục S7; manifest ghi thêm `seed.largeStats` cho từng phiên bản. S5 chạy qua matrix như sau (chỉnh `STAGES` theo bậc cần đo):
+
+~~~bash
+export STAGES=250,500,1000,1500,2000,3000 STAGE_SECONDS=60 RAMP_SECONDS=10
+python load-test/run-matrix.py \
+  --app-ref phase-1-baseline \
+  --scenario stress-read \
+  --seed-scope large \
+  --repeats 3 \
+  --database-pid "$DATABASE_PID"
+~~~
+
+Seed `large` chạy lại cho mỗi phiên bản vì schema bị reset; tính thời gian seed (xem `seed.largeStats.seedSeconds`) vào ngân sách phiên Kaggle.
 
 ### Hạ tầng scale local bằng Docker
 

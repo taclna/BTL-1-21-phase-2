@@ -181,17 +181,36 @@ def stop_process(process):
         process.wait()
 
 
-def seed_application(env, movie_count, deleted_count, max_vus, scenario):
+def resolve_seed_scope(seed_scope, scenario):
+    if seed_scope != "auto":
+        return seed_scope
+    return "movie" if scenario == "movie-read" else "all"
+
+
+def seed_application(env, movie_count, deleted_count, max_vus, seed_scope):
     seed_env = env.copy()
     seed_env.update({
         "MOVIE_COUNT": str(movie_count),
         "DELETED_COUNT": str(deleted_count),
-        "SEED_SCOPE": "movie" if scenario == "movie-read" else "all",
+        "SEED_SCOPE": seed_scope,
         "VUS": str(max_vus),
         "FIXTURES": str(LOAD_ROOT / "fixtures.local.json"),
     })
     run(["node", "load-test/seed.mjs"], cwd=HARNESS_ROOT, env=seed_env)
     return seed_env
+
+
+def seed_evidence(seed_scope):
+    """Dataset facts for the manifest; never copies tokens from the fixture file."""
+    evidence = {"scope": seed_scope}
+    try:
+        saved = json.loads((LOAD_ROOT / "fixtures.local.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return evidence
+    evidence["movies"] = len(saved.get("movieIds") or [])
+    if saved.get("largeStats"):
+        evidence["largeStats"] = saved["largeStats"]
+    return evidence
 
 
 def result_directories():
@@ -243,7 +262,10 @@ def main():
     parser.add_argument("--repo-url", default=default_repo_url())
     parser.add_argument("--app-dir", type=pathlib.Path,
                         default=pathlib.Path(os.environ.get("APP_CHECKOUT", "/kaggle/working/cinema-app")))
-    parser.add_argument("--scenario", choices=("movie-read", "booking", "contention"), default="contention")
+    parser.add_argument("--scenario", choices=("movie-read", "booking", "contention", "stress-read"), default="contention")
+    parser.add_argument("--seed-scope", choices=("auto", "movie", "all", "large"), default="auto",
+                        help="seed.mjs scope; auto = movie for movie-read, all otherwise. "
+                             "Use large for E4/S5 (tune with LARGE_* environment variables)")
     parser.add_argument("--levels", type=int, nargs="+", default=(2,))
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--database-pid", type=int,
@@ -261,6 +283,9 @@ def main():
         parser.error("run-matrix.py requires Linux/Kaggle")
     if args.repeats < 3:
         parser.error("use at least three repeats")
+    seed_scope = resolve_seed_scope(args.seed_scope, args.scenario)
+    if args.scenario == "stress-read" and seed_scope == "movie":
+        parser.error("stress-read needs showtimes; use --seed-scope all or large")
     if any(level < 1 or level > 50 for level in args.levels):
         parser.error("VU levels must be from 1 to 50")
     if args.movie_count < 1 or args.deleted_count < 0 or args.deleted_count >= args.movie_count:
@@ -324,8 +349,10 @@ def main():
             )
             wait_for_api(process, base_url, api_log_path, args.api_timeout)
             measurement_env = seed_application(
-                app_env, args.movie_count, args.deleted_count, max(args.levels), args.scenario,
+                app_env, args.movie_count, args.deleted_count, max(args.levels), seed_scope,
             )
+            entry["seed"] = seed_evidence(seed_scope)
+            write_manifest(manifest_path, harness_commit, entries)
             result_dir = run_measurement(
                 args, measurement_env, app_ref, app_commit, process.pid,
             )

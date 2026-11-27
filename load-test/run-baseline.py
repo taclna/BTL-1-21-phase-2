@@ -268,7 +268,7 @@ def sample_resources(k6_pid, api_pid, db_pid, writer, previous, previous_time, c
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scenario", choices=("movie-read", "booking", "contention"), default="booking")
+    parser.add_argument("--scenario", choices=("movie-read", "booking", "contention", "stress-read"), default="booking")
     parser.add_argument("--app-ref", default=os.environ.get("APP_REF"),
                         help="application tag/branch being measured")
     parser.add_argument("--app-commit", default=os.environ.get("APP_GIT_COMMIT"),
@@ -299,8 +299,13 @@ def main():
     parser.add_argument("--skip-prometheus", action="store_true",
                         help="disable Prometheus evidence")
     args = parser.parse_args()
-    if args.repeats < 3 or any(level < 1 or level > 50 for level in args.levels):
-        parser.error("use at least three repeats and VU levels from 1 to 50")
+    if args.repeats < 3:
+        parser.error("use at least three repeats")
+    if args.scenario != "stress-read" and any(level < 1 or level > 50 for level in args.levels):
+        parser.error("use VU levels from 1 to 50")
+    if args.scenario == "stress-read":
+        # S5 ramps its own arrival-rate stages (STAGES env); one k6 run covers every stage.
+        args.levels = [None]
     if args.scenario == "contention" and len(args.levels) * args.repeats > 9:
         parser.error("contention fixture has nine independent seats; use the default 10/25/50 levels and three repeats")
     if not pathlib.Path("/proc/self/stat").exists():
@@ -345,8 +350,11 @@ def main():
         "scenario": args.scenario,
         "levels": args.levels,
         "repeats": args.repeats,
-        "warmupSeconds": 30 if args.scenario in ("movie-read", "booking") else 0,
-        "measureSeconds": 120 if args.scenario in ("movie-read", "booking") else "one iteration per VU",
+        "warmupSeconds": 30 if args.scenario in ("movie-read", "booking", "stress-read") else 0,
+        "measureSeconds": (120 if args.scenario in ("movie-read", "booking")
+                           else "STAGES x STAGE_SECONDS plus ramps" if args.scenario == "stress-read"
+                           else "one iteration per VU"),
+        "stressStages": os.environ.get("STAGES", "250,500,1000,1500,2000,3000") if args.scenario == "stress-read" else None,
         "cpuModel": cpu_model(),
         "logicalCpuCount": cpu_count,
         "containerCpuQuota": cpu_quota,
@@ -380,7 +388,7 @@ def main():
     contention_index = 0
     for level in args.levels:
         for repeat in range(1, args.repeats + 1):
-            name = f"{args.scenario}-{level}vu-run{repeat}"
+            name = f"{args.scenario}-run{repeat}" if level is None else f"{args.scenario}-{level}vu-run{repeat}"
             raw_path = run_root / f"{name}-raw.json"
             summary_path = run_root / f"{name}.json"
             resource_path = run_root / f"{name}-resources.csv"
@@ -388,14 +396,17 @@ def main():
             deadlock_path = run_root / f"{name}-deadlocks.json"
             prometheus_path = run_root / f"{name}-prometheus.txt"
             env = os.environ.copy()
-            warmup_seconds = 30 if args.scenario in ("movie-read", "booking") else 0
+            warmup_seconds = 30 if args.scenario in ("movie-read", "booking", "stress-read") else 0
             env.update({
-                "VUS": str(level),
                 "WARMUP_SECONDS": str(warmup_seconds),
-                "DURATION_SECONDS": "120" if args.scenario in ("movie-read", "booking") else "1",
                 "GIT_COMMIT": app_commit,
                 "SUMMARY_PATH": str(summary_path),
             })
+            if level is not None:
+                env.update({
+                    "VUS": str(level),
+                    "DURATION_SECONDS": "120" if args.scenario in ("movie-read", "booking") else "1",
+                })
             if args.scenario == "contention":
                 contention_index += 1
                 env["CONTENTION_RUN_INDEX"] = str(contention_index)
